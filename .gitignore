@@ -1,0 +1,10 @@
+.DS_Store
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+.build/
+.swiftpm/
+Packages/GitDriveCore/.build/
+Config/Local.xcconfig
+GitDrive.xcodeproj/
