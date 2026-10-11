@@ -1,0 +1,99 @@
+name: GitDrive
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+packages:
+  GitDriveCore:
+    path: Packages/GitDriveCore
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+    DEAD_CODE_STRIPPING: YES
+    GITDRIVE_APP_GROUP: $(TeamIdentifierPrefix)$(GITDRIVE_BUNDLE_ID)
+    GITDRIVE_KEYCHAIN_GROUP: $(AppIdentifierPrefix)$(GITDRIVE_BUNDLE_ID).shared
+targets:
+  GitDrive:
+    type: application
+    platform: macOS
+    sources:
+      - GitDrive
+    dependencies:
+      - target: GitDriveFileProvider
+      - package: GitDriveCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(GITDRIVE_BUNDLE_ID)
+        PRODUCT_NAME: GitDrive
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: GitDrive/Info.plist
+      properties:
+        CFBundleDisplayName: GitDrive
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.productivity
+        NSHumanReadableCopyright: MIT License
+        GitDriveAppGroup: $(GITDRIVE_APP_GROUP)
+        GitDriveKeychainGroup: $(GITDRIVE_KEYCHAIN_GROUP)
+        GitDriveOAuthClientID: $(GITDRIVE_OAUTH_CLIENT_ID)
+    entitlements:
+      path: GitDrive/GitDrive.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - $(GITDRIVE_APP_GROUP)
+        keychain-access-groups:
+          - $(GITDRIVE_KEYCHAIN_GROUP)
+  GitDriveFileProvider:
+    type: app-extension
+    platform: macOS
+    sources:
+      - GitDriveFileProvider
+    dependencies:
+      - package: GitDriveCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(GITDRIVE_BUNDLE_ID).FileProvider
+        PRODUCT_NAME: GitDriveFileProvider
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: GitDriveFileProvider/Info.plist
+      properties:
+        CFBundleDisplayName: GitDrive
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        GitDriveAppGroup: $(GITDRIVE_APP_GROUP)
+        GitDriveKeychainGroup: $(GITDRIVE_KEYCHAIN_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.fileprovider-nonui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
+          NSExtensionFileProviderDocumentGroup: $(GITDRIVE_APP_GROUP)
+          NSExtensionFileProviderSupportsEnumeration: true
+    entitlements:
+      path: GitDriveFileProvider/GitDriveFileProvider.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - $(GITDRIVE_APP_GROUP)
+        keychain-access-groups:
+          - $(GITDRIVE_KEYCHAIN_GROUP)
+schemes:
+  GitDrive:
+    build:
+      targets:
+        GitDrive: all
+    run:
+      config: Debug
+    test:
+      config: Debug

@@ -1,0 +1,13 @@
+// Shared build settings. Override any of these in Config/Local.xcconfig (not committed).
+
+// Bundle ID of the app. The extension uses "<this>.FileProvider".
+GITDRIVE_BUNDLE_ID = com.diwan.gitdrive
+
+// Client ID of a GitHub OAuth App with Device Flow enabled. Client IDs are public.
+// Leave empty to sign in with a personal access token only.
+GITDRIVE_OAUTH_CLIENT_ID =
+
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+#include? "Local.xcconfig"

@@ -1,0 +1,10 @@
+// Copy to Config/Local.xcconfig and fill in. That file is ignored by git.
+
+// Your Apple team ID (Xcode > Settings > Accounts, or the OU field of your signing certificate).
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Use your own reverse-DNS prefix so the bundle ID doesn't clash with someone else's team.
+GITDRIVE_BUNDLE_ID = com.example.gitdrive
+
+// Optional: your GitHub OAuth App's Client ID for "Sign in with GitHub".
+GITDRIVE_OAUTH_CLIENT_ID =
