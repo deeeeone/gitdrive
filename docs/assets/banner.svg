@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4F7CFF"/>
+      <stop offset="1" stop-color="#23266E"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E4EAFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="400" rx="28" fill="url(#bg)"/>
+  <g opacity="0.10" stroke="#FFFFFF" stroke-width="3" fill="none">
+    <path d="M760 400 V 250 C 760 200 820 190 860 150 V 0"/>
+    <path d="M900 400 V 300 C 900 240 980 230 1020 190 V 0"/>
+    <path d="M1060 400 V 200 C 1060 150 1120 140 1160 100 V 0"/>
+    <circle cx="860" cy="150" r="10"/><circle cx="1020" cy="190" r="10"/><circle cx="1160" cy="100" r="10"/>
+    <circle cx="760" cy="250" r="10"/><circle cx="900" cy="300" r="10"/><circle cx="1060" cy="200" r="10"/>
+  </g>
+  <g transform="translate(40 62) scale(0.3)">
+    <path fill="url(#cloud)" d="M332 702 C 252 702 196 646 196 574 C 196 508 244 456 308 448 C 322 362 396 300 486 300 C 562 300 626 344 654 410 C 666 408 678 406 690 406 C 768 406 828 468 828 548 C 828 632 764 702 684 702 Z"/>
+    <g stroke="#3446C9" stroke-width="30" stroke-linecap="round" fill="none">
+      <path d="M440 426 V 612"/><path d="M594 470 C 594 540 520 548 456 572"/>
+    </g>
+    <g fill="#3446C9"><circle cx="440" cy="420" r="38"/><circle cx="440" cy="618" r="38"/><circle cx="594" cy="460" r="38"/></g>
+    <g fill="#FFFFFF"><circle cx="440" cy="420" r="15"/><circle cx="440" cy="618" r="15"/><circle cx="594" cy="460" r="15"/></g>
+  </g>
+  <text x="330" y="212" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="76" font-weight="700" fill="#FFFFFF">GitDrive</text>
+  <text x="333" y="260" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif" font-size="28" fill="#DCE3FF">Your private GitHub repos as a drive in Finder.</text>
+</svg>

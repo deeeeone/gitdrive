@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" font-family="-apple-system, 'Helvetica Neue', Arial, sans-serif">
+  <style>
+    .box { fill: #FFFFFF; stroke: #C9D2F2; stroke-width: 2; }
+    .accent { fill: #EEF2FF; stroke: #4F7CFF; stroke-width: 2; }
+    .title { font-size: 18px; font-weight: 600; fill: #1B1F4A; }
+    .body { font-size: 13px; fill: #4A5070; }
+    .label { font-size: 12px; fill: #4F7CFF; font-weight: 600; }
+    .line { stroke: #4F7CFF; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    .bg { fill: #F7F8FC; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4F7CFF"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="960" height="420" rx="18"/>
+
+  <rect class="box" x="30" y="40" width="200" height="130" rx="12"/>
+  <text class="title" x="50" y="75">Finder</text>
+  <text class="body" x="50" y="102">Sidebar entry, cloud badges,</text>
+  <text class="body" x="50" y="122">open, rename, delete,</text>
+  <text class="body" x="50" y="142">Remove Download</text>
+
+  <rect class="box" x="30" y="250" width="200" height="130" rx="12"/>
+  <text class="title" x="50" y="285">GitDrive.app</text>
+  <text class="body" x="50" y="312">Menu bar, sign-in,</text>
+  <text class="body" x="50" y="332">polls GitHub every 60 s,</text>
+  <text class="body" x="50" y="352">sizes, pause, free up space</text>
+
+  <rect class="accent" x="330" y="40" width="300" height="340" rx="14"/>
+  <text class="title" x="352" y="75">File Provider extension</text>
+  <text class="body" x="352" y="100">NSFileProviderReplicatedExtension</text>
+  <rect class="box" x="352" y="122" width="256" height="70" rx="10"/>
+  <text class="title" x="370" y="150" font-size="15">SyncEngine</text>
+  <text class="body" x="370" y="172">diffs trees, batches commits, conflicts</text>
+  <rect class="box" x="352" y="206" width="256" height="70" rx="10"/>
+  <text class="title" x="370" y="234" font-size="15">ItemStore (SQLite)</text>
+  <text class="body" x="370" y="256">stable IDs, versions, sync anchor</text>
+  <rect class="box" x="352" y="290" width="256" height="70" rx="10"/>
+  <text class="title" x="370" y="318" font-size="15">GitHubClient</text>
+  <text class="body" x="370" y="340">REST Git Data API, ETags, retries</text>
+
+  <rect class="box" x="730" y="140" width="200" height="140" rx="12"/>
+  <text class="title" x="750" y="175">GitHub</text>
+  <text class="body" x="750" y="202">One private repo per</text>
+  <text class="body" x="750" y="222">top-level folder,</text>
+  <text class="body" x="750" y="242">named drive-&lt;folder&gt;</text>
+
+  <path class="line" d="M230 105 H 326"/>
+  <text class="label" x="246" y="96">file events</text>
+  <path class="line" d="M230 315 C 280 315 280 250 326 250"/>
+  <text class="label" x="238" y="300">signal</text>
+  <path class="line" d="M630 325 C 690 325 680 230 726 230"/>
+  <text class="label" x="640" y="300">HTTPS</text>
+  <path class="line" d="M726 190 C 680 190 690 157 634 157" />
+  <text class="label" x="644" y="146">changes</text>
+</svg>
