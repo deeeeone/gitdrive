@@ -26,7 +26,11 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
             let db = AppConfig.sharedContainer?
                 .appendingPathComponent("Library/Application Support/GitDrive", isDirectory: true)
                 .appendingPathComponent("\(domain.identifier.rawValue).sqlite")
-            let engine = SyncEngine(client: GitHubClient(token: token), store: try ItemStore(url: db))
+            let engine = SyncEngine(
+                client: GitHubClient(token: token),
+                store: try ItemStore(url: db),
+                repoDeletion: { AppConfig.repoDeletion }
+            )
             cachedEngine = engine
             return engine
         }

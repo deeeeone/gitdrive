@@ -39,7 +39,7 @@ struct SyncEngineTests {
     init() throws {
         store = try ItemStore(url: nil)
         let client = GitHubClient(token: "test", session: FakeProtocol.session(for: fake))
-        engine = SyncEngine(client: client, store: store)
+        engine = SyncEngine(client: client, store: store, repoDeletion: { .delete })
     }
 
     private func id(_ repo: String, _ path: String) throws -> String {
@@ -150,6 +150,36 @@ struct SyncEngineTests {
 
         try await engine.delete(id: file.id)
         #expect(fake.files(repo: "drive-docs")[Reserved.metaFile]?.contains("b.txt") == false)
+    }
+
+    @Test func folderMovesBetweenRepos() async throws {
+        let date = ISO8601DateFormatter().date(from: "2025-05-01T12:00:00Z")!
+        fake.seed(repo: "drive-photos", files: [".gitdrive-keep": "", "holiday/beach.jpg": "sand", "holiday/day2/sea.jpg": "water"])
+        fake.seed(repo: "drive-documents", files: [".gitdrive-keep": ""])
+        try await engine.syncAll()
+        let holiday = try id("drive-photos", "holiday")
+        let sea = try id("drive-photos", "holiday/day2/sea.jpg")
+        let docs = try id("drive-documents", "")
+        _ = try await engine.modify(id: sea, newName: nil, newParentID: nil, contents: temp("water"), modified: date)
+
+        let moved = try await engine.modify(id: holiday, newName: nil, newParentID: docs, contents: nil)
+        #expect(moved.id == holiday)
+        #expect(moved.repo == "drive-documents")
+        #expect(fake.files(repo: "drive-documents")["holiday/beach.jpg"] == "sand")
+        #expect(fake.files(repo: "drive-documents")["holiday/day2/sea.jpg"] == "water")
+        #expect(fake.files(repo: "drive-photos").keys.contains { $0.hasPrefix("holiday/") } == false)
+        #expect(try store.item(id: sea)?.path == "holiday/day2/sea.jpg")
+        #expect(try store.item(id: sea)?.repo == "drive-documents")
+        #expect(try store.item(id: sea)?.modified == date)
+    }
+
+    @Test func deletingTopLevelFolderDeletesRepo() async throws {
+        fake.seed(repo: "drive-old", files: ["a.txt": "A"])
+        try await engine.syncAll()
+        let folder = try id("drive-old", "")
+        try await engine.delete(id: folder)
+        #expect(fake.sync { fake.repos["drive-old"] } == nil)
+        #expect(try store.children(of: ItemStore.rootID).isEmpty)
     }
 
     @Test func filesAtRootAreRejected() async throws {

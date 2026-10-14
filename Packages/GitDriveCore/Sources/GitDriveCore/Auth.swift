@@ -7,6 +7,17 @@ public enum AppConfig {
     public static var keychainGroup: String { value("GitDriveKeychainGroup") }
     public static var oauthClientID: String { value("GitDriveOAuthClientID") }
 
+    /// Settings shared by the app and the extension.
+    public static var sharedDefaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
+
+    public static let repoDeletionKey = "repoDeletion"
+
+    /// Defaults to deleting, which matches what deleting a folder in Finder means.
+    public static var repoDeletion: RepoDeletion {
+        get { sharedDefaults?.string(forKey: repoDeletionKey).flatMap(RepoDeletion.init) ?? .delete }
+        set { sharedDefaults?.set(newValue.rawValue, forKey: repoDeletionKey) }
+    }
+
     public static var sharedContainer: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
     }
@@ -80,7 +91,8 @@ public struct DeviceFlow: Sendable {
     }
 
     public let clientID: String
-    public var scope = "repo"
+    /// `delete_repo` lets deleting a top-level folder delete its repo.
+    public var scope = "repo delete_repo"
     private let session: URLSession
 
     public init(clientID: String, session: URLSession = .shared) {

@@ -91,6 +91,10 @@ final class FakeGitHub: @unchecked Sendable {
                 return (200, encode(list))
             }
             guard parts.count >= 3, parts[0] == "repos", let head = repos[parts[2]] else { return (404, encode(["message": "Not Found"])) }
+            if method == "DELETE", parts.count == 3 {
+                repos[parts[2]] = nil
+                return (204, Data())
+            }
             let rest = Array(parts.dropFirst(3))
 
             switch (method, rest.first, rest.dropFirst().first) {

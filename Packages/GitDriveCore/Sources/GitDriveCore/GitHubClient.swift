@@ -58,6 +58,14 @@ public actor GitHubClient {
         try await get("user")
     }
 
+    /// Scopes of a classic token, from GitHub's `X-OAuth-Scopes` header. Nil for fine-grained tokens,
+    /// which don't report scopes.
+    public func tokenScopes() async throws -> Set<String>? {
+        let (_, http) = try await perform(request("GET", "user"))
+        guard let header = http.value(forHTTPHeaderField: "X-OAuth-Scopes") else { return nil }
+        return Set(header.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+    }
+
     /// All repos the user owns, across pages.
     public func ownedRepos() async throws -> [Repo] {
         var all: [Repo] = []
@@ -103,7 +111,22 @@ public actor GitHubClient {
         return try await send("PATCH", "repos/\(owner)/\(name)", body: Body(name: newName))
     }
 
-    /// Archives instead of deleting, so nothing is ever lost.
+    /// Deletes a repo permanently. GitHub requires the `delete_repo` scope for this.
+    public func deleteRepo(owner: String, name: String) async throws {
+        var req = request("DELETE", "repos/\(owner)/\(name)")
+        req.httpBody = nil
+        do {
+            _ = try await perform(req)
+        } catch let e as GitHubError where e.kind == .server(status: 403) || e.kind == .notFound {
+            throw GitHubError(
+                .server(status: 403),
+                "GitHub didn't allow deleting \(name). Sign in again with a token that has the delete_repo scope, "
+                    + "or choose Archive in GitDrive Settings."
+            )
+        }
+    }
+
+    /// Archives a repo. It stays on GitHub, read-only, and can be unarchived later.
     public func archiveRepo(owner: String, name: String) async throws {
         struct Body: Encodable { let archived = true }
         let _: Repo = try await send("PATCH", "repos/\(owner)/\(name)", body: Body())

@@ -19,6 +19,14 @@ public enum DriveError: Error, Sendable, Equatable, CustomStringConvertible {
     }
 }
 
+/// What happens on GitHub when a top-level folder is deleted in Finder.
+public enum RepoDeletion: String, Sendable, CaseIterable {
+    /// Deletes the repo permanently. Needs a token with the `delete_repo` scope.
+    case delete
+    /// Archives the repo so it can be restored from GitHub.
+    case archive
+}
+
 /// A path-level edit. Folder edits are expanded against the real remote tree at commit time,
 /// so hidden placeholder files move and delete along with their folders.
 public enum Edit: Sendable, Equatable {
@@ -39,9 +47,13 @@ public actor SyncEngine {
     /// Parsed meta files by blob SHA. Blobs never change, so entries never go stale.
     private var metaCache: [String: DriveMeta] = [:]
 
-    public init(client: GitHubClient, store: ItemStore) {
+    private let repoDeletion: @Sendable () -> RepoDeletion
+
+    /// `repoDeletion` is read at delete time, so changing the setting applies right away.
+    public init(client: GitHubClient, store: ItemStore, repoDeletion: @escaping @Sendable () -> RepoDeletion = { .archive }) {
         self.client = client
         self.store = store
+        self.repoDeletion = repoDeletion
     }
 
     // MARK: Remote to local
@@ -317,7 +329,13 @@ public actor SyncEngine {
     public func delete(id: String) async throws {
         guard let item = try store.item(id: id), let repo = try store.repo(named: item.repo) else { return }
         if item.path.isEmpty {
-            try await client.archiveRepo(owner: repo.owner, name: repo.name)
+            switch repoDeletion() {
+            case .delete:
+                log.notice("Deleting repo \(repo.name, privacy: .public)")
+                try await client.deleteRepo(owner: repo.owner, name: repo.name)
+            case .archive:
+                try await client.archiveRepo(owner: repo.owner, name: repo.name)
+            }
             try reconcileRepos(try await client.driveRepos())
             return
         }
@@ -342,7 +360,7 @@ public actor SyncEngine {
         _ item: ItemRecord, from: RepoRecord, to: RepoRecord, path: String, contents: URL?, modified: Date
     ) async throws -> ItemRecord {
         if item.isDirectory {
-            throw DriveError.unsupportedMove("Moving folders between top-level folders isn't supported yet. Copy it instead.")
+            return try await moveFolderAcrossRepos(item, from: from, to: to, path: path)
         }
         let source: URL
         if let contents {
@@ -359,6 +377,55 @@ public actor SyncEngine {
         try await commit(repo: from.name, edits: [.delete(path: item.path)], claims: [:], message: "Move \(item.path) to \(to.name)")
         guard let updated = try store.item(id: item.id) else { throw DriveError.noSuchItem }
         return updated
+    }
+
+    /// Copies every file under a folder into another repo, commits there, and only then deletes the
+    /// folder from the source repo. A failure before the delete leaves the original untouched.
+    private func moveFolderAcrossRepos(_ item: ItemRecord, from: RepoRecord, to: RepoRecord, path targetPath: String) async throws -> ItemRecord {
+        if try store.item(repo: to.name, path: targetPath) != nil { throw DriveError.filenameCollision }
+
+        let head = try await client.headSHA(owner: from.owner, repo: from.name, branch: from.branch)
+        let tree = try await client.treeSHA(owner: from.owner, repo: from.name, commit: head)
+        let entries = try await client.fullTree(owner: from.owner, repo: from.name, sha: tree)
+        let meta = await loadMeta(from, entries: entries)
+        let blobs = entries.filter { $0.type == .blob && $0.path.hasPrefix(item.path + "/") }
+
+        // Blobs belong to one repo, so each file is downloaded and uploaded again. Four at a time.
+        var edits: [Edit] = []
+        var dates: [String: Date] = [:]
+        for start in stride(from: 0, to: blobs.count, by: 4) {
+            let chunk = blobs[start..<min(start + 4, blobs.count)]
+            let copied = try await withThrowingTaskGroup(of: (TreeEntry, String).self) { group in
+                for blob in chunk {
+                    group.addTask {
+                        let file = try await self.client.downloadBlob(owner: from.owner, repo: from.name, sha: blob.sha)
+                        defer { try? FileManager.default.removeItem(at: file) }
+                        let sha = try await self.client.createBlob(owner: to.owner, repo: to.name, contentsOf: file)
+                        return (blob, sha)
+                    }
+                }
+                var results: [(TreeEntry, String)] = []
+                for try await result in group { results.append(result) }
+                return results
+            }
+            for (blob, sha) in copied {
+                let newPath = targetPath + blob.path.dropFirst(item.path.count)
+                edits.append(.put(path: newPath, sha: sha, mode: blob.mode))
+                if let date = meta.modified[blob.path] { dates[newPath] = date }
+            }
+        }
+        if edits.isEmpty {
+            edits.append(.put(path: joinPath(targetPath, Reserved.keepFile), sha: try await emptyBlob(in: to)))
+        }
+
+        var claims = [targetPath: item.id]
+        for child in try store.descendants(of: item) {
+            claims[targetPath + child.path.dropFirst(item.path.count)] = child.id
+        }
+        try await commit(repo: to.name, edits: edits, claims: claims, dates: dates, message: "Add \(targetPath) from \(from.name)")
+        try await commit(repo: from.name, edits: [.deleteFolder(path: item.path)], claims: [:], message: "Move \(item.path) to \(to.name)")
+        guard let moved = try store.item(id: item.id) else { throw DriveError.noSuchItem }
+        return moved
     }
 
     // MARK: Commits
