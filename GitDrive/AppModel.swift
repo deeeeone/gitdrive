@@ -219,6 +219,26 @@ final class AppModel {
         await refresh()
     }
 
+    /// Copies an encrypted folder back into a normal readable repo, then deletes the encrypted repo.
+    func decrypt(_ folder: Folder) async {
+        guard let client, let engine = appEngine(client) else { return }
+        guard canDeleteRepos != false else {
+            status = .error("Decrypting deletes the encrypted repo afterwards, which needs a token with the delete_repo scope. Sign out and sign in with a new token first.")
+            return
+        }
+        encrypting = (folder.name, 0, 0)
+        do {
+            _ = try await engine.decrypt(repo: folder.repo.name) { done, total in
+                Task { @MainActor in self.encrypting = (folder.name, done, total) }
+            }
+        } catch {
+            let message = (error as? GitHubError)?.message ?? (error as? DriveError)?.description ?? String(describing: error)
+            status = .error("Couldn't decrypt \(folder.name): \(message)")
+        }
+        encrypting = nil
+        await refresh()
+    }
+
     func encryptAll() async {
         for folder in folders where !folder.encrypted {
             await encrypt(folder)

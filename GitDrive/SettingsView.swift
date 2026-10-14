@@ -152,6 +152,7 @@ private struct FoldersTab: View {
 private struct EncryptionTab: View {
     @Environment(AppModel.self) private var model
     @State private var confirming: AppModel.Folder?
+    @State private var decrypting: AppModel.Folder?
     @State private var confirmingAll = false
 
     var body: some View {
@@ -181,7 +182,7 @@ private struct EncryptionTab: View {
                             Text(folder.name)
                             Spacer()
                             if folder.encrypted {
-                                Text("Encrypted").foregroundStyle(.secondary)
+                                Button("Decrypt…") { decrypting = folder }.disabled(model.encrypting != nil)
                             } else {
                                 Button("Encrypt…") { confirming = folder }.disabled(model.encrypting != nil)
                             }
@@ -218,6 +219,16 @@ private struct EncryptionTab: View {
                 primaryButton: .destructive(Text("Encrypt")) { Task { await model.encrypt(folder) } },
                 secondaryButton: .cancel()
             )
+        }
+        .alert("Decrypt \(decrypting?.name ?? "")?", isPresented: Binding(
+            get: { decrypting != nil }, set: { if !$0 { decrypting = nil } }
+        )) {
+            Button("Decrypt", role: .destructive) {
+                if let folder = decrypting { Task { await model.decrypt(folder) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("GitDrive copies it into a normal repo that GitHub can read, then permanently deletes the encrypted repo. File names, folders and contents will be visible to GitHub again.")
         }
         .alert("Encrypt all folders?", isPresented: $confirmingAll) {
             Button("Encrypt All", role: .destructive) { Task { await model.encryptAll() } }
