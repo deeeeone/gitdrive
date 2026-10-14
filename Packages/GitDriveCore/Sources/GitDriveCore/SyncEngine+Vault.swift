@@ -387,6 +387,63 @@ extension SyncEngine {
     }
 }
 
+extension SyncEngine {
+    /// Turns an encrypted folder back into a normal readable repo, then deletes the encrypted repo.
+    /// Returns the new repo's name. GitHub turns characters it doesn't allow in repo names into "-".
+    public func decrypt(repo name: String, progress: @escaping @Sendable (Int, Int) -> Void = { _, _ in }) async throws -> String {
+        try await syncRepoListIfStale(maxAge: 0)
+        try await syncRepo(name)
+        guard vaults[name] != nil, let rec = try store.repo(named: name), let root = try store.item(repo: name, path: "") else {
+            throw lockedRepos.contains(name) ? VaultError.locked : DriveError.noSuchItem
+        }
+        let items = try store.descendants(of: root)
+        let files = items.filter { !$0.isDirectory }
+        if lfsThreshold() == nil, let big = files.first(where: { $0.size > maxFileSize }) {
+            throw DriveError.tooLarge(big.filename)
+        }
+        let emptyFolders = items.filter { folder in folder.isDirectory && !items.contains { $0.parentID == folder.id } }
+
+        let created = try await client.createDriveRepo(folderName: root.filename)
+        try reconcileRepos(try await client.driveRepos())
+        try await syncRepo(created.name)
+        guard let target = try store.repo(named: created.name) else { throw DriveError.noSuchItem }
+
+        var edits: [Edit] = []
+        var dates: [String: Date] = [:]
+        var lfs: [String: LFSObject] = [:]
+        var done = 0
+        for file in files {
+            let url = try await readContent(rec, sha: file.sha ?? "")
+            let (sha, objects) = try await upload(url, to: target, name: file.filename)
+            try? FileManager.default.removeItem(at: url)
+            edits.append(.put(path: file.path, sha: sha))
+            dates[file.path] = file.modified
+            lfs.merge(objects) { a, _ in a }
+            done += 1
+            progress(done, files.count)
+            if edits.count >= 200 {
+                let batch = edits, batchDates = dates, batchLFS = lfs
+                edits = []
+                dates = [:]
+                lfs = [:]
+                try await commit(repo: target.name, edits: batch, claims: [:], dates: batchDates, lfs: batchLFS, message: "Add files")
+            }
+        }
+        for folder in emptyFolders {
+            edits.append(.put(path: joinPath(folder.path, Reserved.keepFile), sha: try await emptyBlob(in: target)))
+        }
+        if !edits.isEmpty {
+            let batch = edits, batchDates = dates, batchLFS = lfs
+            try await commit(repo: target.name, edits: batch, claims: [:], dates: batchDates, lfs: batchLFS, message: "Add files")
+        }
+
+        try await client.deleteRepo(owner: rec.owner, name: rec.name)
+        vaults[name] = nil
+        try reconcileRepos(try await client.driveRepos())
+        return target.name
+    }
+}
+
 private func randomBytes(_ count: Int) -> Data {
     var data = Data(count: count)
     data.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }

@@ -111,6 +111,12 @@ public final class ItemStore: Sendable {
         m.registerMigration("v2-display-name") { db in
             try db.alter(table: "items") { t in t.add(column: "displayName", .text) }
         }
+        // Encrypted folders gained a lock badge; report them again so Finder shows it.
+        m.registerMigration("v3-announce-badges") { db in
+            let next = (try Int64.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'seq'") ?? 0) + 1
+            try db.execute(sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('seq', ?)", arguments: [next])
+            try db.execute(sql: "UPDATE items SET seq = ? WHERE displayName IS NOT NULL", arguments: [next])
+        }
         return m
     }
 

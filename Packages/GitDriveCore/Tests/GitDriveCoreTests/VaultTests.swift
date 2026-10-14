@@ -162,6 +162,27 @@ struct EncryptedFolderTests {
         #expect(packsAfter < packsBefore)
     }
 
+    @Test func encryptedFolderCanBeDecrypted() async throws {
+        let store = try ItemStore(url: nil)
+        let engine = engine(store: store, identity: identity)
+        try await engine.syncAll()
+        let folder = try await engine.createFolder(parentID: ItemStore.rootID, name: "Vault")
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let sub = try await engine.createFolder(parentID: folder.id, name: "docs")
+        _ = try await engine.createFile(parentID: sub.id, name: "a.txt", contents: temp("alpha"), modified: date)
+        _ = try await engine.createFolder(parentID: folder.id, name: "empty")
+
+        let plain = try await engine.decrypt(repo: folder.repo)
+        #expect(plain == "drive-Vault")
+        #expect(fake.sync { fake.repos[folder.repo] } == nil)
+        let files = fake.files(repo: plain)
+        #expect(files["docs/a.txt"] == "alpha")
+        #expect(files["empty/.gitdrive-keep"] == "")
+        #expect(files[Reserved.vaultFile] == nil)
+        #expect(try store.item(repo: plain, path: "docs/a.txt")?.modified == date)
+        #expect(await engine.isEncrypted(repo: plain) == false)
+    }
+
     @Test func plainFolderCanBeEncrypted() async throws {
         fake.seed(repo: "drive-notes", files: [".gitdrive-keep": "", "diary.txt": "dear diary", "empty/.gitdrive-keep": ""])
         let store = try ItemStore(url: nil)
