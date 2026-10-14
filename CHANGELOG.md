@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/install.sh` builds and installs GitDrive in one command with a free Apple ID.
+- README screenshots.
+
+### Fixed
+
+- Open in Finder works from the sandboxed app.
+- The drive's trash no longer reports an error to the system.
+- Menu icons line up, and empty folders show "Empty" instead of "Zero KB".
+
 ## [0.1.0] - 2026-10-13
 
 ### Added

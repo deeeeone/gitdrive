@@ -20,6 +20,17 @@
   <img src="docs/assets/banner.svg" alt="GitDrive banner" width="100%">
 </p>
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/assets/finder.png" alt="GitDrive in the Finder sidebar, showing files from a GitHub repo, one of them online only" width="72%">
+  &nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/menu-dark.png">
+    <img src="docs/assets/menu-light.png" alt="GitDrive menu bar panel with folders, sizes and actions" width="24%">
+  </picture>
+</p>
+
 ## Features
 
 - **Lives in Finder.** GitDrive appears in the Finder sidebar like iCloud Drive or Dropbox, built on Apple's File Provider framework.
@@ -43,22 +54,25 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Install
 
-### Download
-
-Prebuilt downloads will be added to [Releases](https://github.com/deeeeone/gitdrive/releases) once builds are signed with a Developer ID and notarized by Apple. macOS only loads File Provider extensions from properly signed apps, so for now please build from source. It takes about two minutes.
-
-### Build from source
-
-Requirements: macOS 14 or later, Xcode 16 or later, and an Apple ID signed in to Xcode (a free account works).
+GitDrive is free and installs from source. You need macOS 14 or later, [Xcode](https://apps.apple.com/app/xcode/id497799835) (free), and an Apple ID added to Xcode under **Settings → Accounts**. A free Apple ID works; no paid developer account needed.
 
 ```bash
 git clone https://github.com/deeeeone/gitdrive.git
 cd gitdrive
+./scripts/install.sh
+```
+
+The script installs XcodeGen if needed, finds your signing team, builds GitDrive, copies it to `/Applications` and opens it. It takes a minute or two the first time.
+
+<details>
+<summary>Building by hand instead</summary>
+
+```bash
 brew install xcodegen
 cp Config/Local.xcconfig.example Config/Local.xcconfig
 ```
 
-Edit `Config/Local.xcconfig`: set `DEVELOPMENT_TEAM` to your team ID and `GITDRIVE_BUNDLE_ID` to a reverse-DNS name you own. Then:
+Set `DEVELOPMENT_TEAM` and `GITDRIVE_BUNDLE_ID` in `Config/Local.xcconfig`, then:
 
 ```bash
 xcodegen generate
@@ -66,6 +80,11 @@ open GitDrive.xcodeproj
 ```
 
 Choose the **GitDrive** scheme and press Run.
+
+</details>
+
+> [!NOTE]
+> There are no prebuilt downloads. macOS only loads File Provider extensions from apps signed by a developer team, so each person builds GitDrive with their own Apple ID. Builds made this way run on the Mac that built them.
 
 ## First run
 

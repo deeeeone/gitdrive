@@ -36,6 +36,16 @@ fileproviderctl dump
 
 If Finder seems stuck on an old build, quit GitDrive, run `pluginkit -m -v | grep -i gitdrive` to check which copy is registered, and launch the new build again.
 
+## Updating screenshots
+
+Debug builds can show the menu panel in a normal window so it can be captured:
+
+```bash
+GITDRIVE_SNAPSHOT=dark build/Build/Products/Debug/GitDrive.app/Contents/MacOS/GitDrive
+```
+
+Then capture the window with `screencapture -l <window id>`. Use `light` for the light version.
+
 ## Code style
 
 - Swift 6 with strict concurrency. No `@unchecked Sendable` unless a system type forces it, with a comment saying why.
