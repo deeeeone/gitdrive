@@ -38,6 +38,7 @@
 - **Frees up space.** Right-click and choose Remove Download, or use Free Up Space in the menu bar. macOS can also remove downloads on its own when the disk is low.
 - **Private by default.** Every top-level folder is its own private GitHub repo named `drive-<folder>`.
 - **Real git history.** Each save is a commit, so every old version stays recoverable on GitHub.
+- **Keeps file dates.** Modification dates are saved in the repo, so every Mac shows the same dates.
 - **Works with other edits.** Changes made on github.com or from a clone show up in Finder within a minute. Edits on both sides keep both copies.
 - **Menu bar app.** Sync status, folder sizes, pause, launch at login.
 - **No local clones.** GitDrive talks to the GitHub API directly, so files are never stored twice.
@@ -122,7 +123,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 ## Roadmap
 
 - [ ] Git LFS for files over 100 MB
-- [ ] Modification dates stored in the repo
+- [x] Modification dates stored in the repo
 - [ ] Moving folders between top-level folders
 - [ ] Shared folders (repos you collaborate on)
 - [ ] Signed and notarized release builds

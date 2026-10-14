@@ -18,6 +18,21 @@ The app and the extension share two things: the Keychain access group that holds
 - Git can't store empty folders, so GitDrive writes a hidden `.gitdrive-keep` file into them. Paths under `.gitdrive/` are reserved for GitDrive's own data. Both are hidden from Finder.
 - `.DS_Store`, `._*` and `.localized` files stay local and are never committed.
 
+## Modification dates
+
+Git doesn't store file dates, so GitDrive keeps them in `.gitdrive/meta.json`:
+
+```json
+{
+  "modified" : {
+    "notes/todo.md" : "2026-10-14T03:35:00Z"
+  },
+  "version" : 1
+}
+```
+
+The file is updated in the same commit as the change it describes, and dates follow files through renames, folder moves and conflict copies. Files added outside GitDrive (on github.com or with `git push`) aren't listed, so they show the date of the commit that last changed them. The meta file is read once per new tree and cached by blob SHA.
+
 ## Identity and versions
 
 Git has no stable file IDs, so the index gives every item a random ID and keeps it across renames and moves. A rename or move is sent to the sync engine with a *claim*: "path X now belongs to item Y". When the new tree comes back, claimed paths keep their old IDs and everything else is matched by path.
