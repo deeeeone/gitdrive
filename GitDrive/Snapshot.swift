@@ -17,7 +17,8 @@ enum Snapshot {
         for pair in spec.split(separator: ",") {
             let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
             guard parts.count == 2 else { continue }
-            if let int = Int(parts[1]) { defaults.set(int, forKey: parts[0]) }
+            if parts[1].hasPrefix("@") { defaults.set(parts[1].dropFirst().split(separator: ";").map(String.init), forKey: parts[0]) }
+            else if let int = Int(parts[1]) { defaults.set(int, forKey: parts[0]) }
             else if let bool = Bool(parts[1]) { defaults.set(bool, forKey: parts[0]) }
             else { defaults.set(parts[1], forKey: parts[0]) }
         }

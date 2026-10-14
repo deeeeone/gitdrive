@@ -288,8 +288,30 @@ private struct ExtraOptions: View {
             }
             .font(.callout)
             if extra == .passcode { PasscodeOptions() }
+        case .photos:
+            FolderPicker(title: "Photo folders", selection: Binding(get: { AppConfig.photoRepos }, set: { AppConfig.photoRepos = $0 }))
         default:
             EmptyView()
+        }
+    }
+}
+
+/// Choose some top-level folders, for features that work on chosen folders.
+struct FolderPicker: View {
+    @Environment(AppModel.self) private var model
+    let title: String
+    @Binding var selection: Set<String>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption.weight(.semibold))
+            ForEach(model.folders) { folder in
+                Toggle(folder.name, isOn: Binding(
+                    get: { selection.contains(folder.repo.name) },
+                    set: { on in if on { selection.insert(folder.repo.name) } else { selection.remove(folder.repo.name) } }
+                ))
+                .font(.callout)
+            }
         }
     }
 }

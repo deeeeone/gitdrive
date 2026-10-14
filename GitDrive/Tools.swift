@@ -10,6 +10,8 @@ enum Tools {
             ToolWindows.show("Versions", id: "versions-\(request.repo)-\(request.path)") {
                 VersionsView(model: model, repo: request.repo, path: request.path)
             }
+        case .photos:
+            showPhotos(model: model)
         case .conflict:
             showConflicts(model: model, focus: request.path)
         case .recentlyDeleted:
@@ -17,6 +19,10 @@ enum Tools {
         default:
             break
         }
+    }
+
+    static func showPhotos(model: AppModel) {
+        ToolWindows.show("Photos", id: "photos", size: CGSize(width: 860, height: 600)) { PhotosView(model: model) }
     }
 
     static func showConflicts(model: AppModel, focus: String? = nil) {

@@ -72,6 +72,9 @@ struct MenuView: View {
                     Tools.showConflicts(model: model)
                 }
             }
+            if AppConfig.isOn(.photos) {
+                MenuButton("Photos", symbol: "photo.on.rectangle") { Tools.showPhotos(model: model) }
+            }
             if AppConfig.isOn(.recentlyDeleted) {
                 MenuButton("Recently Deleted…", symbol: "trash") { Tools.showRecentlyDeleted(model: model) }
             }

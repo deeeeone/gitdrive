@@ -5,7 +5,7 @@ import notify
 /// The extension has no UI, so anything with a window happens in the app.
 public struct ToolRequest: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: String, Codable, Sendable {
-        case versions, recentlyDeleted, conflict, publish, codespaces, compressVideo, convertPDF, tripwire
+        case versions, recentlyDeleted, conflict, publish, codespaces, compressVideo, convertPDF, tripwire, photos, notes
     }
 
     public var id = UUID()
