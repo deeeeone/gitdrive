@@ -45,6 +45,18 @@
 - **Menu bar app.** Sync status, folder sizes, pause, launch at login.
 - **No local clones.** GitDrive talks to the GitHub API directly, so files are never stored twice.
 
+### Extras
+
+Optional features, each with a switch in **Settings → Extras**:
+
+- **Finder:** Quick Look and thumbnails without downloading, search for files that aren't downloaded (including encrypted names), conflict badges.
+- **History:** Show Versions, Recently Deleted, a conflict viewer with side-by-side diff, a duplicate finder, a monthly bit-rot check.
+- **Safety:** Touch ID or a passcode for encrypted folders, decoy folders behind a duress passcode, a ransomware tripwire with one-hour rollback.
+- **Modes:** Photos (timeline, map, albums), Notes (Markdown with backlinks), daily versioned backups of Mac folders.
+- **GitHub:** publish a folder as a website, compress videos or make PDFs with GitHub Actions, open a folder in Codespaces.
+
+Details and defaults are in [docs/EXTRAS.md](docs/EXTRAS.md).
+
 ## How it works
 
 <p align="center">

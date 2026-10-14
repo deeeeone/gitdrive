@@ -56,6 +56,15 @@ GITDRIVE_DEFAULTS="lfsEnabled=true,lfsThresholdMB=1" build/Build/Products/Debug/
 
 `GITDRIVE_SETUP_KEY=1` does the same as **Set Up Encryption** and prints the key fingerprint. It never replaces an existing key.
 
+Other Debug-only switches, each of which does its job and quits:
+
+| Variable | Does |
+|---|---|
+| `GITDRIVE_DEFAULTS="key=value,…"` | Writes shared settings. `@a;b` writes a list; an empty value removes the key. Extras are `extra.<name>`. |
+| `GITDRIVE_REQUEST="kind\|repo\|path"` | Sends a Finder action request to the running app, as if from a right-click (`versions`, `recentlyDeleted`, `conflict`, `photos`, `notes`, …). |
+| `GITDRIVE_ROLLBACK="repo\|minutes"` | Rolls one repo back and clears the tripwire. |
+| `GITDRIVE_BITROT=1` | Runs the bit-rot check and prints the report. |
+
 ## Code style
 
 - Swift 6 with strict concurrency. No `@unchecked Sendable` unless a system type forces it, with a comment saying why.

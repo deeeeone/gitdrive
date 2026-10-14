@@ -19,11 +19,16 @@ All notable changes to this project are documented here. The format is based on 
 - Decrypt an encrypted folder back into a normal repo from Settings → Encryption.
 - Encrypted folders show a lock badge in Finder.
 
+- Extras in Settings, each with its own switch: sync badges, Quick Look without downloading, search for files that aren't downloaded, thumbnails, Show Versions, Recently Deleted, conflict viewer, duplicate finder, bit-rot check, Touch ID and passcode locks with decoy folders, ransomware tripwire with rollback, Photos, Notes, backups, publish as website, run in the cloud and Open in Codespaces. See docs/EXTRAS.md.
+
 ### Changed
 
 - Deleting a top-level folder now deletes its GitHub repo. Settings can switch this back to archiving. Sign-in asks for the `delete_repo` scope.
 
 ### Fixed
+
+- After a conflict, the local file now shows GitHub's version, with your edit in the conflict copy.
+- Saving a file with unchanged contents no longer makes an empty commit.
 
 - Open in Finder works from the sandboxed app.
 - The drive's trash no longer reports an error to the system.
