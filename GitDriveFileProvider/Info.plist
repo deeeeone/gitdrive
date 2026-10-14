@@ -26,6 +26,17 @@
 	<string>$(GITDRIVE_KEYCHAIN_GROUP)</string>
 	<key>NSExtension</key>
 	<dict>
+		<key>NSExtensionFileProviderActions</key>
+		<array>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.versions == YES ).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>com.diwan.gitdrive.action.versions</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Show Versions…</string>
+			</dict>
+		</array>
 		<key>NSExtensionFileProviderDocumentGroup</key>
 		<string>$(GITDRIVE_APP_GROUP)</string>
 		<key>NSExtensionFileProviderSupportsEnumeration</key>

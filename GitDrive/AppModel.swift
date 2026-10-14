@@ -90,6 +90,7 @@ final class AppModel {
         #if DEBUG
         Snapshot.applyDefaultsIfRequested()
         Snapshot.setUpKeyIfRequested()
+        Snapshot.sendRequestIfAsked()
         #endif
         Task { await start() }
         bridgeToken = Bridge.observe { Task { @MainActor in self.handleRequests() } }

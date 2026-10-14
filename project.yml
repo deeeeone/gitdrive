@@ -79,6 +79,10 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
           NSExtensionFileProviderDocumentGroup: $(GITDRIVE_APP_GROUP)
           NSExtensionFileProviderSupportsEnumeration: true
+          NSExtensionFileProviderActions:
+            - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.versions
+              NSExtensionFileProviderActionName: Show Versions…
+              NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.versions == YES ).@count == 1
           NSFileProviderDecorations:
             - Identifier: $(PRODUCT_BUNDLE_IDENTIFIER).encrypted
               BadgeImageType: com.apple.icon-decoration.badge.locked

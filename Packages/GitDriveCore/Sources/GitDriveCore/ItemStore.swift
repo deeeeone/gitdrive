@@ -184,6 +184,15 @@ public final class ItemStore: Sendable {
         try db.write { try repo.save($0) }
     }
 
+    /// Gives every item a new sequence number so the next change enumeration reports all of them.
+    public func reannounceAll() throws {
+        try db.write { db in
+            let next = (try Int64.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'seq'") ?? 0) + 1
+            try db.execute(sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('seq', ?)", arguments: [next])
+            try db.execute(sql: "UPDATE items SET seq = ?", arguments: [next])
+        }
+    }
+
     public func write<T>(_ body: (Writer) throws -> T) throws -> T {
         try db.write { db in try body(Writer(db: db)) }
     }

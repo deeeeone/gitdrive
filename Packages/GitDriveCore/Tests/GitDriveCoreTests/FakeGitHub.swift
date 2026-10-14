@@ -123,6 +123,27 @@ final class FakeGitHub: @unchecked Sendable {
             guard parts.count >= 3, parts[0] == "repos", let head = repos[parts[2]] else { return (404, encode(["message": "Not Found"])) }
             let rest = Array(parts.dropFirst(3))
             if method == "GET", parts.count == 3 { return (200, encode(repoJSON(parts[2]))) }
+            if method == "GET", rest == ["commits"] {
+                let filter = req.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first { $0.name == "path" }?.value
+                var list: [[String: Any]] = []
+                var cur: String? = head
+                while let c = cur, let commit = commits[c] {
+                    let parent = commit.parents.first
+                    let mine = trees[commit.tree]?[filter ?? ""]
+                    let before = parent.flatMap { commits[$0] }.flatMap { trees[$0.tree]?[filter ?? ""] }
+                    if filter == nil || mine != before {
+                        list.append(["sha": c, "commit": ["message": "m", "committer": ["date": "2026-01-02T03:04:05Z"]], "parents": commit.parents.map { ["sha": $0] }])
+                    }
+                    cur = parent
+                }
+                return (200, encode(list))
+            }
+            if method == "GET", rest.first == "contents" {
+                let filePath = rest.dropFirst().joined(separator: "/")
+                let ref = req.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first { $0.name == "ref" }?.value ?? head
+                guard let sha = commits[ref].flatMap({ trees[$0.tree]?[filePath] }) else { return (404, encode(["message": "Not Found"])) }
+                return (200, encode(["sha": sha, "size": blobs[sha]?.count ?? 0, "type": "file"]))
+            }
             if method == "PUT", rest.first == "contents" {
                 let filePath = rest.dropFirst().joined(separator: "/")
                 var flat = trees[commits[head]!.tree]!

@@ -183,6 +183,24 @@ struct EncryptedFolderTests {
         #expect(await engine.isEncrypted(repo: plain) == false)
     }
 
+    @Test func encryptedVersionsSurvivePackPruning() async throws {
+        let store = try ItemStore(url: nil)
+        let engine = engine(store: store, identity: identity)
+        try await engine.syncAll()
+        let folder = try await engine.createFolder(parentID: ItemStore.rootID, name: "V")
+        let file = try await engine.createFile(parentID: folder.id, name: "a.txt", contents: temp("first"))
+        _ = try await engine.modify(id: file.id, newName: nil, newParentID: nil, contents: temp("second"))
+
+        let versions = try await engine.versions(repo: folder.repo, path: "a.txt")
+        #expect(versions.count == 2)
+        let old = try #require(versions.last)
+        // The first version's pack was pruned from the current tree, but history still has it.
+        #expect(try String(contentsOf: try await engine.contents(of: old, repo: folder.repo), encoding: .utf8) == "first")
+        try await engine.restore(old, repo: folder.repo, path: "a.txt")
+        let (url, _) = try await engine.download(id: file.id)
+        #expect(try String(contentsOf: url, encoding: .utf8) == "first")
+    }
+
     @Test func plainFolderCanBeEncrypted() async throws {
         fake.seed(repo: "drive-notes", files: [".gitdrive-keep": "", "diary.txt": "dear diary", "empty/.gitdrive-keep": ""])
         let store = try ItemStore(url: nil)

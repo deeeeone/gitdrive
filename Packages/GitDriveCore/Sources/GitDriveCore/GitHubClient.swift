@@ -267,6 +267,58 @@ public actor GitHubClient {
         }
     }
 
+    // MARK: History
+
+    public struct CommitSummary: Sendable, Hashable {
+        public let sha: String
+        public let message: String
+        public let date: Date
+        public let parents: [String]
+    }
+
+    /// Recent commits, newest first, optionally only those touching `path` or made after `since`.
+    public func commits(owner: String, repo: String, path: String? = nil, since: Date? = nil, until: Date? = nil, limit: Int = 30) async throws -> [CommitSummary] {
+        struct Item: Decodable {
+            struct Inner: Decodable { struct Person: Decodable { let date: String }; let message: String; let committer: Person }
+            struct Parent: Decodable { let sha: String }
+            let sha: String
+            let commit: Inner
+            let parents: [Parent]
+        }
+        var query = ["per_page": "\(min(limit, 100))"]
+        if let path { query["path"] = path }
+        let iso = ISO8601DateFormatter()
+        if let since { query["since"] = iso.string(from: since) }
+        if let until { query["until"] = iso.string(from: until) }
+        let items: [Item] = try await get("repos/\(owner)/\(repo)/commits", query: query)
+        return items.map {
+            CommitSummary(sha: $0.sha, message: $0.commit.message, date: iso.date(from: $0.commit.committer.date) ?? .distantPast, parents: $0.parents.map(\.sha))
+        }
+    }
+
+    /// The blob SHA and size of a file at a given commit, or nil if it didn't exist then.
+    public func fileAt(owner: String, repo: String, path: String, ref: String) async throws -> (sha: String, size: Int64)? {
+        struct Content: Decodable { let sha: String; let size: Int64; let type: String }
+        do {
+            let c: Content = try await get("repos/\(owner)/\(repo)/contents/\(path)", query: ["ref": ref])
+            return c.type == "file" ? (c.sha, c.size) : nil
+        } catch let e as GitHubError where e.kind == .notFound {
+            return nil
+        }
+    }
+
+    public struct ChangedFile: Decodable, Sendable {
+        public let filename: String
+        public let status: String
+    }
+
+    /// Files a commit added, modified, removed or renamed.
+    public func changedFiles(owner: String, repo: String, commit: String) async throws -> [ChangedFile] {
+        struct Detail: Decodable { let files: [ChangedFile]? }
+        let detail: Detail = try await get("repos/\(owner)/\(repo)/commits/\(commit)", cache: true)
+        return detail.files ?? []
+    }
+
     // MARK: Git LFS
 
     /// GitHub's LFS limit for a single file on Free and Pro plans.

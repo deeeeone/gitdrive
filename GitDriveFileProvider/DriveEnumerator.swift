@@ -65,6 +65,11 @@ final class DriveEnumerator: NSObject, NSFileProviderEnumerator, @unchecked Send
     private func reportChanges(to observer: Unchecked<NSFileProviderChangeObserver>, since: Int64, parent: String?, sync: Bool) async {
         do {
             if sync { try await syncQuietly() }
+            let extras = AppConfig.extrasVersion
+            if extras != UserDefaults.standard.integer(forKey: "seenExtrasVersion") {
+                try engine.store.reannounceAll()
+                UserDefaults.standard.set(extras, forKey: "seenExtrasVersion")
+            }
             let changes = try engine.store.changes(since: since, parentID: parent)
             if !changes.updated.isEmpty { observer.value.didUpdate(changes.updated.map(DriveItem.init)) }
             if !changes.deleted.isEmpty {

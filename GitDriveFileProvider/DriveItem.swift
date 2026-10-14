@@ -52,7 +52,8 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
         let content = record?.sha ?? "folder"
         // Decorations are part of the metadata version so Finder refreshes the badge when it changes.
         let badges = (decorations ?? []).map(\.rawValue).joined(separator: ",")
-        let metadata = record.map { "\($0.repo)/\($0.path)#\(badges)" } ?? "root"
+        let flags = (userInfo ?? [:]).compactMap { ($0.value as? Bool) == true ? "\($0.key)" : nil }.sorted().joined(separator: ",")
+        let metadata = record.map { "\($0.repo)/\($0.path)#\(badges)#\(flags)" } ?? "root"
         return NSFileProviderItemVersion(contentVersion: Data(content.utf8), metadataVersion: Data(metadata.utf8))
     }
 
@@ -68,6 +69,7 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
             "folder": record.isDirectory,
             "top": record.path.isEmpty,
             "plain": !encrypted,
+            "versions": !record.isDirectory && AppConfig.isOn(.versions),
         ]
     }
 

@@ -92,5 +92,10 @@ extension AppConfig {
 
     public static func set(_ extra: Extra, on: Bool) {
         sharedDefaults?.set(on, forKey: "extra." + extra.rawValue)
+        sharedDefaults?.set(extrasVersion + 1, forKey: "extrasVersion")
     }
+
+    /// Goes up whenever an Extra changes, so the extension knows to report items again with new
+    /// Finder actions and badges.
+    public static var extrasVersion: Int { sharedDefaults?.integer(forKey: "extrasVersion") ?? 0 }
 }

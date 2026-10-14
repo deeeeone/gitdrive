@@ -230,6 +230,24 @@ struct SyncEngineTests {
         #expect(GitAttributes.update(out, lfsPaths: []) == "*.psd binary\n")
     }
 
+    @Test func versionsCanBeListedAndRestored() async throws {
+        fake.seed(repo: "drive-docs", files: [".gitdrive-keep": ""])
+        try await engine.syncAll()
+        let folder = try id("drive-docs", "")
+        let file = try await engine.createFile(parentID: folder, name: "v.txt", contents: temp("one"))
+        _ = try await engine.modify(id: file.id, newName: nil, newParentID: nil, contents: temp("two"))
+        _ = try await engine.modify(id: file.id, newName: nil, newParentID: nil, contents: temp("three"))
+
+        let versions = try await engine.versions(repo: "drive-docs", path: "v.txt")
+        #expect(versions.count == 3)
+        #expect(versions.first?.isCurrent == true)
+        let oldest = try #require(versions.last)
+        #expect(try String(contentsOf: try await engine.contents(of: oldest, repo: "drive-docs"), encoding: .utf8) == "one")
+
+        try await engine.restore(oldest, repo: "drive-docs", path: "v.txt")
+        #expect(fake.files(repo: "drive-docs")["v.txt"] == "one")
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

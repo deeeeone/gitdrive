@@ -38,6 +38,15 @@ enum Snapshot {
         }
     }
 
+    /// GITDRIVE_REQUEST="versions|drive-repo|path/in/repo" sends a Finder action request to the running app and quits.
+    static func sendRequestIfAsked() {
+        guard let spec = ProcessInfo.processInfo.environment["GITDRIVE_REQUEST"] else { return }
+        let parts = spec.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 3, let kind = ToolRequest.Kind(rawValue: parts[0]) else { exit(1) }
+        Bridge.send(ToolRequest(kind: kind, repo: parts[1], path: parts[2]))
+        exit(0)
+    }
+
     static func renderIfRequested(model: AppModel) {
         guard let mode = ProcessInfo.processInfo.environment["GITDRIVE_SNAPSHOT"] else { return }
         Task { @MainActor in

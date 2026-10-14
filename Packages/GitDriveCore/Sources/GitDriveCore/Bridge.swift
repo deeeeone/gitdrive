@@ -23,7 +23,8 @@ public struct ToolRequest: Codable, Hashable, Sendable, Identifiable {
 
 /// Hands requests from the extension to the app through the shared App Group folder and a Darwin notification.
 public enum Bridge {
-    static let notification = "com.diwan.gitdrive.request"
+    /// Sandboxed processes may only post and observe Darwin notifications prefixed with their App Group.
+    static var notification: String { AppConfig.appGroup + ".request" }
 
     static var folder: URL? {
         AppConfig.sharedContainer?.appendingPathComponent("Library/Application Support/GitDrive/Requests", isDirectory: true)

@@ -94,11 +94,12 @@ extension SyncEngine {
     }
 
     /// The real bytes of a file, for plain repos (following LFS pointers) and encrypted ones.
-    func readContent(_ rec: RepoRecord, sha: String) async throws -> URL {
+    /// Pass `state` to read from an older snapshot of an encrypted folder.
+    func readContent(_ rec: RepoRecord, sha: String, state snapshot: VaultState? = nil) async throws -> URL {
         guard isVault(rec.name) else {
             return try await client.downloadContents(owner: rec.owner, repo: rec.name, sha: sha)
         }
-        guard let state = vaults[rec.name] else { throw VaultError.locked }
+        guard let state = snapshot ?? vaults[rec.name] else { throw VaultError.locked }
         guard let file = state.index.file(withContent: sha) else { throw DriveError.noSuchItem }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: url.path, contents: nil)
