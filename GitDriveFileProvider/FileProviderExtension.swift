@@ -30,7 +30,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 client: GitHubClient(token: token),
                 store: try ItemStore(url: db),
                 repoDeletion: { AppConfig.repoDeletion },
-                lfsThreshold: { AppConfig.lfsThresholdBytes }
+                lfsThreshold: { AppConfig.lfsThresholdBytes },
+                identity: { IdentityStore().load() },
+                encryptNewFolders: { AppConfig.encryptNewFolders }
             )
             cachedEngine = engine
             return engine

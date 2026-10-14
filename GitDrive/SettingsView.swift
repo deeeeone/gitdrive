@@ -5,6 +5,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
+            EncryptionTab().tabItem { Label("Encryption", systemImage: "lock") }
             FoldersTab().tabItem { Label("Folders", systemImage: "folder") }
             AboutTab().tabItem { Label("About", systemImage: "info.circle") }
         }
@@ -86,13 +87,15 @@ private struct FoldersTab: View {
     var body: some View {
         Form {
             Section {
-                if model.repos.isEmpty {
+                if model.folders.isEmpty {
                     Text("No folders yet.").foregroundStyle(.secondary)
                 }
-                ForEach(model.repos, id: \.name) { repo in
+                ForEach(model.folders) { folder in
+                    let repo = folder.repo
                     HStack {
+                        Image(systemName: folder.encrypted ? "lock.fill" : "folder").frame(width: 18)
                         VStack(alignment: .leading) {
-                            Text(repo.displayName)
+                            Text(folder.name)
                             Text("\(repo.owner.login)/\(repo.name) · \(repo.size.kilobytesFormatted)")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -142,6 +145,85 @@ private struct FoldersTab: View {
                 primaryButton: .default(Text("Add")) { Task { await model.addToDrive(repo) } },
                 secondaryButton: .cancel()
             )
+        }
+    }
+}
+
+private struct EncryptionTab: View {
+    @Environment(AppModel.self) private var model
+    @State private var confirming: AppModel.Folder?
+    @State private var confirmingAll = false
+
+    var body: some View {
+        Form {
+            if !model.encryptionAvailable {
+                Section {
+                    Text("Encrypted folders need macOS 26 or later.").foregroundStyle(.secondary)
+                }
+            } else if let keyID = model.encryptionKeyID {
+                Section {
+                    LabeledContent("Key fingerprint", value: keyID)
+                    Toggle("Encrypt new top-level folders", isOn: Binding(
+                        get: { model.encryptNewFolders },
+                        set: { model.encryptNewFolders = $0 }
+                    ))
+                } header: {
+                    Text("Your key")
+                } footer: {
+                    Text("The private key is in iCloud Keychain, so your other Macs on the same Apple Account can open encrypted folders. If iCloud Keychain is off, the key exists only on this Mac. Losing it means the encrypted files can't be recovered by anyone.")
+                }
+                Section {
+                    let plain = model.folders.filter { !$0.encrypted }
+                    if model.folders.isEmpty { Text("No folders yet.").foregroundStyle(.secondary) }
+                    ForEach(model.folders) { folder in
+                        HStack {
+                            Image(systemName: folder.encrypted ? "lock.fill" : "lock.open").frame(width: 18)
+                            Text(folder.name)
+                            Spacer()
+                            if folder.encrypted {
+                                Text("Encrypted").foregroundStyle(.secondary)
+                            } else {
+                                Button("Encrypt…") { confirming = folder }.disabled(model.encrypting != nil)
+                            }
+                        }
+                    }
+                    if plain.count > 1 {
+                        Button("Encrypt All Folders…") { confirmingAll = true }.disabled(model.encrypting != nil)
+                    }
+                    if let job = model.encrypting {
+                        ProgressView(value: Double(job.done), total: Double(max(job.total, 1))) {
+                            Text("Encrypting \(job.name): \(job.done) of \(job.total) files")
+                        }
+                    }
+                } header: {
+                    Text("Folders")
+                } footer: {
+                    Text("Encrypting copies a folder into a new repo where names, folder layout, file sizes and contents are all hidden, then deletes the readable repo and its history from GitHub.")
+                }
+            } else {
+                Section {
+                    Text("Encrypt folders so GitHub only ever sees random data. Names, folders, file sizes and contents are all hidden.")
+                    Button("Set Up Encryption") { model.setUpEncryption() }
+                        .buttonStyle(.borderedProminent)
+                } footer: {
+                    Text("Creates a post-quantum key pair (ML-KEM-768 with X25519) and keeps the private key in iCloud Keychain. Each encrypted repo holds only the public key.")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .alert(item: $confirming) { folder in
+            Alert(
+                title: Text("Encrypt \(folder.name)?"),
+                message: Text("GitDrive copies it into a new encrypted repo, then permanently deletes the readable repo \(folder.repo.name) and its history. Copies downloaded on this Mac will download again."),
+                primaryButton: .destructive(Text("Encrypt")) { Task { await model.encrypt(folder) } },
+                secondaryButton: .cancel()
+            )
+        }
+        .alert("Encrypt all folders?", isPresented: $confirmingAll) {
+            Button("Encrypt All", role: .destructive) { Task { await model.encryptAll() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Each readable repo is copied into a new encrypted repo and then permanently deleted with its history.")
         }
     }
 }

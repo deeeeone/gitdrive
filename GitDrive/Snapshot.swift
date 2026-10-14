@@ -25,6 +25,19 @@ enum Snapshot {
         exit(0)
     }
 
+    /// GITDRIVE_SETUP_KEY=1 does what Settings → Encryption → Set Up Encryption does, prints the
+    /// fingerprint and quits. Never replaces an existing key.
+    static func setUpKeyIfRequested() {
+        guard ProcessInfo.processInfo.environment["GITDRIVE_SETUP_KEY"] != nil else { return }
+        do {
+            print("key", try IdentityStore().loadOrCreate().keyID)
+            exit(0)
+        } catch {
+            print("error", error)
+            exit(1)
+        }
+    }
+
     static func renderIfRequested(model: AppModel) {
         guard let mode = ProcessInfo.processInfo.environment["GITDRIVE_SNAPSHOT"] else { return }
         Task { @MainActor in

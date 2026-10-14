@@ -88,16 +88,24 @@ private struct FolderList: View {
                 Spacer()
                 Text("\(model.totalSizeKB.kilobytesFormatted) on GitHub").font(.caption).foregroundStyle(.secondary)
             }
-            if model.repos.isEmpty {
+            if let job = model.encrypting {
+                ProgressView(value: Double(job.done), total: Double(max(job.total, 1))) {
+                    Text("Encrypting \(job.name)").font(.caption)
+                }
+            }
+            if model.folders.isEmpty {
                 Text("No folders yet. Open GitDrive in Finder and make a folder at the top level. Each one becomes a private repo.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(model.repos, id: \.name) { repo in
+                ForEach(model.folders) { folder in
+                    let repo = folder.repo
                     HStack {
-                        Image(systemName: "folder.fill").foregroundStyle(.tint)
-                        Text(repo.displayName).lineLimit(1)
+                        Image(systemName: folder.encrypted ? "lock.fill" : "folder.fill").foregroundStyle(.tint)
+                            .frame(width: 18)
+                            .help(folder.encrypted ? "Encrypted" : "Not encrypted")
+                        Text(folder.name).lineLimit(1)
                         Spacer()
                         if repo.size > 1_000_000 {
                             Image(systemName: "exclamationmark.triangle.fill")

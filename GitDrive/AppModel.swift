@@ -41,10 +41,32 @@ final class AppModel {
         didSet { AppConfig.lfsThresholdMB = lfsThresholdMB }
     }
 
+    /// A top-level folder as shown in the UI. Encrypted folders get their real name from the sealed index.
+    struct Folder: Identifiable, Equatable {
+        let repo: Repo
+        let name: String
+        let encrypted: Bool
+        var id: String { repo.name }
+    }
+
+    var folders: [Folder] = []
+    var encryptionKeyID: String? = IdentityStore().load()?.keyID
+    var encryptNewFolders = AppConfig.encryptNewFolders {
+        didSet { AppConfig.encryptNewFolders = encryptNewFolders }
+    }
+    /// Progress of an "Encrypt" job: folder name, files done, total files.
+    var encrypting: (name: String, done: Int, total: Int)?
+    var encryptionAvailable: Bool {
+        if #available(macOS 26, *) { true } else { false }
+    }
+
     @ObservationIgnored private let tokens = TokenStore()
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var signInTask: Task<Void, Never>?
     @ObservationIgnored private let log = Logger(subsystem: "com.diwan.gitdrive", category: "app")
+    /// The app's own engine with an in-memory index. Used to read encrypted folder names and to
+    /// encrypt folders; the extension keeps the real index.
+    @ObservationIgnored private var engine: SyncEngine?
 
     static let domain = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("github"), displayName: "GitHub")
     private var manager: NSFileProviderManager? { NSFileProviderManager(for: Self.domain) }
@@ -66,6 +88,7 @@ final class AppModel {
     init() {
         #if DEBUG
         Snapshot.applyDefaultsIfRequested()
+        Snapshot.setUpKeyIfRequested()
         #endif
         Task { await start() }
         #if DEBUG
@@ -123,7 +146,10 @@ final class AppModel {
                 repos = all.filter { $0.isDrive && !$0.archived }
                 otherRepos = all.filter { !$0.isDrive && !$0.archived }
             }
-            if includeSizes { canDeleteRepos = try await client.tokenScopes().map { $0.contains("delete_repo") } }
+            if includeSizes {
+                canDeleteRepos = try await client.tokenScopes().map { $0.contains("delete_repo") }
+                await loadFolders(client: client)
+            }
             if case let .signedIn(login) = account, login.isEmpty {
                 account = .signedIn(login: try await client.currentUser().login)
             }
@@ -132,6 +158,71 @@ final class AppModel {
         } catch {
             log.error("Refresh failed: \(String(describing: error), privacy: .public)")
             status = .error((error as? GitHubError)?.message ?? error.localizedDescription)
+        }
+    }
+
+    private func appEngine(_ client: GitHubClient) -> SyncEngine? {
+        if let engine { return engine }
+        guard let store = try? ItemStore(url: nil) else { return nil }
+        let engine = SyncEngine(
+            client: client, store: store,
+            repoDeletion: { .delete },
+            lfsThreshold: { AppConfig.lfsThresholdBytes },
+            identity: { IdentityStore().load() }
+        )
+        self.engine = engine
+        return engine
+    }
+
+    private func loadFolders(client: GitHubClient) async {
+        guard let engine = appEngine(client) else { return }
+        do {
+            try await engine.syncAll()
+        } catch {
+            log.notice("Folder names not refreshed: \(String(describing: error), privacy: .public)")
+        }
+        var list: [Folder] = []
+        for repo in repos {
+            let name = (try? engine.store.item(repo: repo.name, path: "")?.filename) ?? repo.displayName
+            list.append(Folder(repo: repo, name: name, encrypted: await engine.isEncrypted(repo: repo.name)))
+        }
+        folders = list.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    // MARK: Encryption
+
+    /// Creates the post-quantum key pair and saves it to iCloud Keychain. Never replaces an existing key.
+    func setUpEncryption() {
+        do {
+            encryptionKeyID = try IdentityStore().loadOrCreate().keyID
+        } catch {
+            status = .error((error as? VaultError)?.description ?? error.localizedDescription)
+        }
+    }
+
+    /// Copies a plain folder into a new encrypted repo, then deletes the plain repo.
+    func encrypt(_ folder: Folder) async {
+        guard let client, let engine = appEngine(client), encryptionKeyID != nil else { return }
+        guard canDeleteRepos != false else {
+            status = .error("Encrypting deletes the readable repo afterwards, which needs a token with the delete_repo scope. Sign out and sign in with a new token first.")
+            return
+        }
+        encrypting = (folder.name, 0, 0)
+        do {
+            _ = try await engine.encrypt(repo: folder.repo.name) { done, total in
+                Task { @MainActor in self.encrypting = (folder.name, done, total) }
+            }
+        } catch {
+            status = .error("Couldn't encrypt \(folder.name): \((error as? GitHubError)?.message ?? String(describing: error))")
+        }
+        encrypting = nil
+        await refresh()
+    }
+
+    func encryptAll() async {
+        for folder in folders where !folder.encrypted {
+            await encrypt(folder)
+            if case .error = status { return }
         }
     }
 
@@ -188,6 +279,8 @@ final class AppModel {
         tokens.delete()
         repos = []
         otherRepos = []
+        folders = []
+        engine = nil
         account = .signedOut
         status = .idle
     }
