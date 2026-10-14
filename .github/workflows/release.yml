@@ -12,20 +12,21 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Build
+      - name: Run tests
+        working-directory: Packages/GitDriveCore
+        run: swift test
+      - name: Build (verification only)
         run: |
+          brew install xcodegen
           xcodegen generate
           xcodebuild -project GitDrive.xcodeproj -scheme GitDrive -configuration Release \
             -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-      - name: Package
-        run: |
-          cd build/Build/Products/Release
-          ditto -c -k --keepParent GitDrive.app "GitDrive-${GITHUB_REF_NAME}.zip"
+      # File Provider extensions only load when the app is signed with a real team and
+      # provisioning profile, so an unsigned zip would not run on anyone's Mac.
+      # Binaries will be attached here once Developer ID signing and notarization are set up.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "build/Build/Products/Release/GitDrive-${GITHUB_REF_NAME}.zip" \
-            --title "GitDrive $GITHUB_REF_NAME" --generate-notes --prerelease
+          notes=$(awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md)
+          gh release create "$GITHUB_REF_NAME" --title "GitDrive $GITHUB_REF_NAME" --prerelease --notes "$notes"

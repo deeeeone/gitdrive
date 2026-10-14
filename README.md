@@ -45,7 +45,7 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Download
 
-Get the latest build from [Releases](https://github.com/deeeeone/gitdrive/releases), unzip it, and move `GitDrive.app` to `/Applications`.
+Prebuilt downloads will be added to [Releases](https://github.com/deeeeone/gitdrive/releases) once builds are signed with a Developer ID and notarized by Apple. macOS only loads File Provider extensions from properly signed apps, so for now please build from source. It takes about two minutes.
 
 ### Build from source
 

@@ -1,5 +1,5 @@
 import AppKit
-import FileProvider
+@preconcurrency import FileProvider
 import GitDriveCore
 import Observation
 import os
