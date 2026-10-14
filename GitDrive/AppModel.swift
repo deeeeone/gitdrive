@@ -29,6 +29,11 @@ final class AppModel {
     var otherRepos: [Repo] = []
     var lastSync: Date?
     var launchAtLogin = SMAppService.mainApp.status == .enabled
+    /// False when the token is known to lack `delete_repo`. Nil when GitHub doesn't say.
+    var canDeleteRepos: Bool?
+    var repoDeletion = AppConfig.repoDeletion {
+        didSet { AppConfig.repoDeletion = repoDeletion }
+    }
 
     @ObservationIgnored private let tokens = TokenStore()
     @ObservationIgnored private var pollTask: Task<Void, Never>?
@@ -109,6 +114,7 @@ final class AppModel {
                 repos = all.filter { $0.isDrive && !$0.archived }
                 otherRepos = all.filter { !$0.isDrive && !$0.archived }
             }
+            if includeSizes { canDeleteRepos = try await client.tokenScopes().map { $0.contains("delete_repo") } }
             if case let .signedIn(login) = account, login.isEmpty {
                 account = .signedIn(login: try await client.currentUser().login)
             }

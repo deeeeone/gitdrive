@@ -23,6 +23,27 @@ private struct GeneralTab: View {
                     set: { model.setLaunchAtLogin($0) }
                 ))
             }
+            Section {
+                Picker("Deleting a top-level folder", selection: Binding(
+                    get: { model.repoDeletion },
+                    set: { model.repoDeletion = $0 }
+                )) {
+                    Text("Deletes its GitHub repo").tag(RepoDeletion.delete)
+                    Text("Archives its GitHub repo").tag(RepoDeletion.archive)
+                }
+                if model.repoDeletion == .delete, model.canDeleteRepos == false {
+                    Label("Your token can't delete repos. Sign out and sign in with a token that has the delete_repo scope, or choose Archive.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Top-level folders")
+            } footer: {
+                Text(model.repoDeletion == .delete
+                    ? "Deleting a repo is permanent, including its history. Finder asks before deleting."
+                    : "Archived repos disappear from the drive but stay on GitHub, read-only. Unarchive one on GitHub to bring it back.")
+            }
             Section("Account") {
                 if case let .signedIn(login) = model.account {
                     LabeledContent("Signed in as", value: login.isEmpty ? "Offline" : "@\(login)")
