@@ -32,6 +32,8 @@ public actor GitHubClient {
     public nonisolated let baseURL: URL
     /// Host for git and LFS endpoints, which live on github.com rather than the API host.
     public nonisolated let gitURL: URL
+    /// Host serving raw file contents, which supports byte ranges.
+    public nonisolated let rawURL: URL
     private let session: URLSession
     private let token: String
     private var etags: [URL: (etag: String, body: Data)] = [:]
@@ -41,11 +43,13 @@ public actor GitHubClient {
         token: String,
         baseURL: URL = URL(string: "https://api.github.com")!,
         gitURL: URL = URL(string: "https://github.com")!,
+        rawURL: URL = URL(string: "https://raw.githubusercontent.com")!,
         session: URLSession = GitHubClient.makeSession()
     ) {
         self.token = token
         self.baseURL = baseURL
         self.gitURL = gitURL
+        self.rawURL = rawURL
         self.session = session
     }
 
@@ -317,6 +321,24 @@ public actor GitHubClient {
         struct Detail: Decodable { let files: [ChangedFile]? }
         let detail: Detail = try await get("repos/\(owner)/\(repo)/commits/\(commit)", cache: true)
         return detail.files ?? []
+    }
+
+    // MARK: Byte ranges
+
+    /// Downloads part of a file at `ref`. Returns the bytes and whether the server honoured the range
+    /// (if not, the bytes are the whole file).
+    public func rawRange(owner: String, repo: String, ref: String, path: String, range: Range<Int64>) async throws -> (Data, partial: Bool) {
+        var comps = URLComponents(url: rawURL, resolvingAgainstBaseURL: false)!
+        let segments = [owner, repo, ref] + path.split(separator: "/").map(String.init)
+        comps.percentEncodedPath = "/" + segments.map {
+            $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))) ?? $0
+        }.joined(separator: "/")
+        var req = URLRequest(url: comps.url!)
+        req.setValue("token \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("bytes=\(range.lowerBound)-\(range.upperBound - 1)", forHTTPHeaderField: "Range")
+        req.setValue("GitDrive", forHTTPHeaderField: "User-Agent")
+        let (data, http) = try await perform(req)
+        return (data, http.statusCode == 206)
     }
 
     // MARK: Git LFS

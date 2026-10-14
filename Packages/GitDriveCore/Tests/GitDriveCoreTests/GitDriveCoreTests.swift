@@ -260,6 +260,26 @@ struct SyncEngineTests {
         #expect(try await engine.recentlyDeleted().isEmpty)
     }
 
+    @Test func largeFilesCanBeReadInParts() async throws {
+        var bytes = [UInt8](repeating: 0, count: 5 * 1024 * 1024)
+        for i in bytes.indices { bytes[i] = UInt8(i % 251) }
+        let big = String(decoding: bytes.map { $0 % 26 + 97 }, as: UTF8.self)
+        fake.seed(repo: "drive-media", files: ["movie bits.bin": big])
+        try await engine.syncAll()
+        let item = try #require(try store.item(repo: "drive-media", path: "movie bits.bin"))
+
+        let part = try #require(try await engine.partialContents(id: item.id, offset: 3_000_000, length: 10, alignment: 4096))
+        #expect(part.offset == 2_998_272)
+        #expect(part.length == Int64(SyncEngine.minimumPartialRead))
+        let handle = try FileHandle(forReadingFrom: part.url)
+        try handle.seek(toOffset: 3_000_000)
+        let read = try handle.read(upToCount: 10)
+        #expect(read == Data(big.utf8).subdata(in: 3_000_000..<3_000_010))
+
+        let small = try await engine.createFile(parentID: try id("drive-media", ""), name: "s.txt", contents: temp("tiny"))
+        #expect(try await engine.partialContents(id: small.id, offset: 0, length: 1, alignment: 4096) == nil)
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

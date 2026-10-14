@@ -46,6 +46,8 @@ public actor SyncEngine {
     var emptyBlobs: [String: String] = [:]
     /// Parsed meta files by blob SHA. Blobs never change, so entries never go stale.
     var metaCache: [String: DriveMeta] = [:]
+    /// Each plain repo's meta file as of its last refresh.
+    var currentMeta: [String: DriveMeta] = [:]
 
     let repoDeletion: @Sendable () -> RepoDeletion
     let lfsThreshold: @Sendable () -> Int64?
@@ -159,6 +161,7 @@ public actor SyncEngine {
         vaults[name] = nil
         lockedRepos.remove(name)
         let meta = await loadMeta(rec, entries: entries)
+        currentMeta[name] = meta
         try apply(repo: rec, head: head, entries: entries, claims: claims, meta: meta, fallbackDate: commitDate)
     }
 

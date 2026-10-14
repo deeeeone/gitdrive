@@ -9,7 +9,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
     private let manager: NSFileProviderManager?
     private let lock = NSLock()
     private var cachedEngine: SyncEngine?
-    private let log = Logger(subsystem: "com.diwan.gitdrive", category: "extension")
+    let log = Logger(subsystem: "com.diwan.gitdrive", category: "extension")
 
     required init(domain: NSFileProviderDomain) {
         self.domain = domain
@@ -19,7 +19,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
 
     func invalidate() {}
 
-    private func engine() throws -> SyncEngine {
+    func engine() throws -> SyncEngine {
         try lock.withLock {
             if let cachedEngine { return cachedEngine }
             guard let token = TokenStore().read() else { throw NSFileProviderError(.notAuthenticated) }
@@ -90,7 +90,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
     }
 
     /// The system clones the file from here, so it must live on the same volume as the domain.
-    private func moveToTemporaryDirectory(_ url: URL) throws -> URL {
+    func moveToTemporaryDirectory(_ url: URL) throws -> URL {
         guard let dir = try manager?.temporaryDirectoryURL() else { return url }
         let target = dir.appendingPathComponent(UUID().uuidString)
         try FileManager.default.moveItem(at: url, to: target)
@@ -203,6 +203,47 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data().write(to: url)
         return url
+    }
+}
+
+// MARK: Partial downloads
+
+/// Lets Quick Look and other readers fetch only the byte ranges they need from large plain files.
+extension FileProviderExtension: NSFileProviderPartialContentFetching {
+    func fetchPartialContents(
+        for itemIdentifier: NSFileProviderItemIdentifier,
+        version requestedVersion: NSFileProviderItemVersion,
+        request: NSFileProviderRequest,
+        minimalRange requestedRange: NSRange,
+        aligningTo alignment: Int,
+        options: NSFileProviderFetchContentsOptions = [],
+        completionHandler: @escaping (URL?, NSFileProviderItem?, NSRange, NSFileProviderMaterializationFlags, Error?) -> Void
+    ) -> Progress {
+        let progress = Progress(totalUnitCount: 1)
+        let done = Unchecked(completionHandler)
+        Task {
+            do {
+                let engine = try self.engine()
+                if AppConfig.isOn(.quickLook),
+                   let part = try await engine.partialContents(
+                       id: itemIdentifier.rawValue, offset: Int64(requestedRange.location),
+                       length: Int64(requestedRange.length), alignment: Int64(alignment)
+                   ) {
+                    let url = try self.moveToTemporaryDirectory(part.url)
+                    done.value(url, DriveItem(part.item), NSRange(location: Int(part.offset), length: Int(part.length)), [], nil)
+                } else {
+                    let (downloaded, record) = try await engine.download(id: itemIdentifier.rawValue)
+                    let url = try self.moveToTemporaryDirectory(downloaded)
+                    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int(record.size)
+                    done.value(url, DriveItem(record), NSRange(location: 0, length: size), [], nil)
+                }
+            } catch {
+                self.log.error("Partial download failed: \(String(describing: error), privacy: .public)")
+                done.value(nil, nil, NSRange(location: 0, length: 0), [], fileProviderError(error))
+            }
+            progress.completedUnitCount = 1
+        }
+        return progress
     }
 }
 

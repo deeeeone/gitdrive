@@ -105,6 +105,16 @@ final class FakeGitHub: @unchecked Sendable {
                 if method == "PUT" { lfsObjects[oid] = body; return (200, Data()) }
                 return lfsObjects[oid].map { (200, $0) } ?? (404, Data())
             }
+            // raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>, with Range support.
+            if parts.count >= 4, parts[0] == owner, let commit = commits[parts[2]], let ownerRepo = Optional(parts[1]), repos[ownerRepo] != nil {
+                let filePath = parts.dropFirst(3).joined(separator: "/").removingPercentEncoding ?? ""
+                guard let sha = trees[commit.tree]?[filePath], let data = blobs[sha] else { return (404, Data()) }
+                if let range = req.value(forHTTPHeaderField: "Range")?.dropFirst("bytes=".count).split(separator: "-"),
+                   let a = Int(range[0]), let b = Int(range[1]) {
+                    return (206, data.subdata(in: a..<min(b + 1, data.count)))
+                }
+                return (200, data)
+            }
             if method == "POST", path == "/user/repos" {
                 let name = json["name"] as! String
                 let tree = newSHA()
