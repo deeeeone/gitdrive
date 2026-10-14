@@ -12,6 +12,8 @@ enum Tools {
             }
         case .photos:
             showPhotos(model: model)
+        case .notes:
+            showNotes(model: model)
         case .conflict:
             showConflicts(model: model, focus: request.path)
         case .recentlyDeleted:
@@ -19,6 +21,10 @@ enum Tools {
         default:
             break
         }
+    }
+
+    static func showNotes(model: AppModel) {
+        ToolWindows.show("Notes", id: "notes", size: CGSize(width: 900, height: 600)) { NotesView(model: model) }
     }
 
     static func showPhotos(model: AppModel) {

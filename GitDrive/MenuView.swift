@@ -72,6 +72,9 @@ struct MenuView: View {
                     Tools.showConflicts(model: model)
                 }
             }
+            if AppConfig.isOn(.notes) {
+                MenuButton("Notes", symbol: "note.text") { Tools.showNotes(model: model) }
+            }
             if AppConfig.isOn(.photos) {
                 MenuButton("Photos", symbol: "photo.on.rectangle") { Tools.showPhotos(model: model) }
             }

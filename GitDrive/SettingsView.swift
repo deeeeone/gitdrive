@@ -288,6 +288,8 @@ private struct ExtraOptions: View {
             }
             .font(.callout)
             if extra == .passcode { PasscodeOptions() }
+        case .notes:
+            FolderPicker(title: "Notes folders", selection: Binding(get: { AppConfig.notesRepos }, set: { AppConfig.notesRepos = $0 }))
         case .photos:
             FolderPicker(title: "Photo folders", selection: Binding(get: { AppConfig.photoRepos }, set: { AppConfig.photoRepos = $0 }))
         default:
