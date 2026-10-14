@@ -137,6 +137,18 @@ struct EncryptedFolderTests {
         #expect(try strangerStore.children(of: locked.id).isEmpty)
     }
 
+    @Test func encryptedNamesAreSearchableLocally() async throws {
+        let store = try ItemStore(url: nil)
+        let engine = engine(store: store, identity: identity)
+        try await engine.syncAll()
+        let folder = try await engine.createFolder(parentID: ItemStore.rootID, name: "Taxes")
+        _ = try await engine.createFile(parentID: folder.id, name: "Résumé final.pdf", contents: temp("cv"))
+        #expect(try store.search("resume").map(\.filename) == ["Résumé final.pdf"])
+        #expect(try store.search("FINAL res").count == 1)
+        #expect(try store.search("taxes").map(\.filename) == ["Taxes"])
+        #expect(try store.search("nothing").isEmpty)
+    }
+
     @Test func editsDeletesAndFolderMoves() async throws {
         let store = try ItemStore(url: nil)
         let engine = engine(store: store, identity: identity)

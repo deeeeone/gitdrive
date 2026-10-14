@@ -134,6 +134,16 @@ public final class ItemStore: Sendable {
         try db.read { try ItemRecord.filter(Column("parentID") == parentID).order(Column("path")).fetchAll($0) }
     }
 
+    /// Items whose name contains `query`, ignoring case and accents. Matches encrypted names too,
+    /// since they're only ever decrypted into this local index.
+    public func search(_ query: String, limit: Int = 100) throws -> [ItemRecord] {
+        let words = query.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+        guard !words.isEmpty else { return [] }
+        // SQLite's LIKE ignores neither accents nor non-ASCII case, so matching happens here.
+        let all = try db.read { try ItemRecord.fetchAll($0) }
+        return Array(all.filter { item in words.allSatisfy { item.filename.localizedStandardContains($0) } }.prefix(limit))
+    }
+
     public func allItems() throws -> [ItemRecord] {
         try db.read { try ItemRecord.order(Column("repo"), Column("path")).fetchAll($0) }
     }

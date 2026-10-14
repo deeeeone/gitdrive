@@ -123,6 +123,7 @@ final class AppModel {
     }
 
     private func addDomain() async throws {
+        if #available(macOS 26, *) { Self.domain.supportsStringSearchRequest = AppConfig.isOn(.search) }
         try await NSFileProviderManager.add(Self.domain)
     }
 
@@ -209,7 +210,11 @@ final class AppModel {
 
     /// Called when an Extra is switched on or off in Settings.
     func extraChanged(_ extra: Extra) {
-        Task { try? await manager?.signalEnumerator(for: .workingSet) }
+        Task {
+            // Search support is a property of the domain, so the domain is added again to apply it.
+            if extra == .search, case .signedIn = account { try? await addDomain() }
+            try? await manager?.signalEnumerator(for: .workingSet)
+        }
     }
 
     // MARK: Encryption
