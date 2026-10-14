@@ -46,6 +46,16 @@
 				<key>Label</key>
 				<string>Encrypted</string>
 			</dict>
+			<dict>
+				<key>BadgeImageType</key>
+				<string>com.apple.icon-decoration.badge.warning</string>
+				<key>Category</key>
+				<string>Badge</string>
+				<key>Identifier</key>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER).conflict</string>
+				<key>Label</key>
+				<string>Conflict copy</string>
+			</dict>
 		</array>
 	</dict>
 </dict>

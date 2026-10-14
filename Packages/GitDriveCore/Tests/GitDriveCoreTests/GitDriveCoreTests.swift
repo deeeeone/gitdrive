@@ -13,6 +13,13 @@ struct ModelTests {
         #expect(conflictPath(for: "Makefile", date: date).hasSuffix(")"))
     }
 
+    @Test func conflictCopiesPointBackToTheOriginal() {
+        let copy = conflictPath(for: "docs/notes.txt", date: Date(timeIntervalSince1970: 0))
+        #expect(isConflictCopy((copy as NSString).lastPathComponent))
+        #expect(originalPath(ofConflictCopy: copy) == "docs/notes.txt")
+        #expect(!isConflictCopy("notes.txt"))
+    }
+
     @Test func hiddenPaths() {
         #expect(Reserved.isHidden(path: "a/.gitdrive-keep"))
         #expect(Reserved.isHidden(path: ".gitdrive/meta.json"))

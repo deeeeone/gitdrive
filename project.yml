@@ -84,6 +84,10 @@ targets:
               BadgeImageType: com.apple.icon-decoration.badge.locked
               Category: Badge
               Label: Encrypted
+            - Identifier: $(PRODUCT_BUNDLE_IDENTIFIER).conflict
+              BadgeImageType: com.apple.icon-decoration.badge.warning
+              Category: Badge
+              Label: Conflict copy
     entitlements:
       path: GitDriveFileProvider/GitDriveFileProvider.entitlements
       properties:

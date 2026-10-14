@@ -130,6 +130,19 @@ public func conflictPath(for path: String, date: Date = Date()) -> String {
     return joinPath(dir, name)
 }
 
+/// Whether a filename is a conflict copy made by `conflictPath(for:)`.
+public func isConflictCopy(_ filename: String) -> Bool {
+    filename.contains(" (conflict from Mac ")
+}
+
+/// The original file a conflict copy was made from: "notes (conflict from Mac …).txt" → "notes.txt".
+public func originalPath(ofConflictCopy path: String) -> String? {
+    guard let start = path.range(of: " (conflict from Mac "), let end = path.range(of: ")", range: start.upperBound..<path.endIndex) else {
+        return nil
+    }
+    return String(path[..<start.lowerBound]) + String(path[end.upperBound...])
+}
+
 public func parentPath(of path: String) -> String {
     guard let slash = path.lastIndex(of: "/") else { return "" }
     return String(path[..<slash])

@@ -51,7 +51,8 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
     var itemVersion: NSFileProviderItemVersion {
         let content = record?.sha ?? "folder"
         // Decorations are part of the metadata version so Finder refreshes the badge when it changes.
-        let metadata = record.map { "\($0.repo)/\($0.path)" + (decorations == nil ? "" : "#locked") } ?? "root"
+        let badges = (decorations ?? []).map(\.rawValue).joined(separator: ",")
+        let metadata = record.map { "\($0.repo)/\($0.path)#\(badges)" } ?? "root"
         return NSFileProviderItemVersion(contentVersion: Data(content.utf8), metadataVersion: Data(metadata.utf8))
     }
 
@@ -70,11 +71,21 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
         ]
     }
 
-    /// Encrypted top-level folders get a lock badge. Only encrypted repos carry a display name.
+    /// Encrypted top-level folders get a lock badge (only encrypted repos carry a display name).
+    /// With the Sync badges extra, conflict copies get a warning badge.
     var decorations: [NSFileProviderItemDecorationIdentifier]? {
-        guard let record, record.path.isEmpty, record.displayName != nil else { return nil }
-        return [Self.encryptedDecoration]
+        guard let record else { return nil }
+        var badges: [NSFileProviderItemDecorationIdentifier] = []
+        if record.path.isEmpty, record.displayName != nil { badges.append(Self.encryptedDecoration) }
+        if !record.isDirectory, AppConfig.isOn(.syncBadges), isConflictCopy(record.filename) {
+            badges.append(Self.conflictDecoration)
+        }
+        return badges.isEmpty ? nil : badges
     }
+
+    static let conflictDecoration = NSFileProviderItemDecorationIdentifier(
+        rawValue: (Bundle.main.bundleIdentifier ?? "com.diwan.gitdrive.FileProvider") + ".conflict"
+    )
 
     /// Must match the Identifier in NSFileProviderDecorations in the extension's Info.plist.
     static let encryptedDecoration = NSFileProviderItemDecorationIdentifier(
