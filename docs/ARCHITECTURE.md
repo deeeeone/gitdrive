@@ -31,7 +31,7 @@ Git doesn't store file dates, so GitDrive keeps them in `.gitdrive/meta.json`:
 }
 ```
 
-The file is updated in the same commit as the change it describes, and dates follow files through renames, folder moves and conflict copies. Files added outside GitDrive (on github.com or with `git push`) aren't listed, so they show the date of the commit that last changed them. The meta file is read once per new tree and cached by blob SHA.
+The file is updated in the same commit as the change it describes, and dates follow files through renames, folder moves and conflict copies. Files added outside GitDrive (on github.com or with `git push`) aren't listed, so they show the date of the newest commit at the time GitDrive saw them change. That is exact for single edits but can be later than the real change if several commits arrived at once. The meta file is read once per new tree and cached by blob SHA.
 
 ## Identity and versions
 

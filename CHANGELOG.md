@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format is based on 
 
 - `scripts/install.sh` builds and installs GitDrive in one command with a free Apple ID.
 - README screenshots.
-- File modification dates are stored in `.gitdrive/meta.json` and shown on every Mac. Files added outside GitDrive show their last commit date.
+- File modification dates are stored in `.gitdrive/meta.json` and shown on every Mac. Files added outside GitDrive show the date of the commit GitDrive found them in.
 
 ### Fixed
 
