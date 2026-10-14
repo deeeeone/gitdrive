@@ -6,6 +6,8 @@ public enum Reserved {
     public static let keepFile = ".gitdrive-keep"
     /// Folder for GitDrive's own metadata.
     public static let metaFolder = ".gitdrive"
+    /// File holding each file's modification date, since git doesn't store them.
+    public static let metaFile = ".gitdrive/meta.json"
     /// Prefix that marks a repo as a GitDrive folder.
     public static let repoPrefix = "drive-"
 
@@ -132,4 +134,33 @@ public func parentPath(of path: String) -> String {
 
 public func joinPath(_ parent: String, _ name: String) -> String {
     parent.isEmpty ? name : "\(parent)/\(name)"
+}
+
+/// Contents of `.gitdrive/meta.json`. Kept sorted and pretty-printed so diffs on GitHub stay readable.
+public struct DriveMeta: Codable, Sendable, Equatable {
+    public var version = 1
+    /// Repo path to the file's last modification date.
+    public var modified: [String: Date] = [:]
+
+    public init(modified: [String: Date] = [:]) {
+        self.modified = modified
+    }
+
+    public func encoded() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(self)
+    }
+
+    public static func decode(_ data: Data) -> DriveMeta {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode(DriveMeta.self, from: data)) ?? DriveMeta()
+    }
+}
+
+extension Date {
+    /// ISO 8601 in the meta file keeps whole seconds, so dates are rounded before comparing.
+    public var wholeSeconds: Date { Date(timeIntervalSince1970: timeIntervalSince1970.rounded(.down)) }
 }

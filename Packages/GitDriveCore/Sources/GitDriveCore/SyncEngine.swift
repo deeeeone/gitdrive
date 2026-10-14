@@ -36,6 +36,8 @@ public actor SyncEngine {
     private let locks = KeyedLock()
     private var lastRepoList: Date?
     private var emptyBlobs: [String: String] = [:]
+    /// Parsed meta files by blob SHA. Blobs never change, so entries never go stale.
+    private var metaCache: [String: DriveMeta] = [:]
 
     public init(client: GitHubClient, store: ItemStore) {
         self.client = client
@@ -101,6 +103,7 @@ public actor SyncEngine {
         guard let rec = try store.repo(named: name) else { return }
         let head: String
         let treeSHA: String
+        var commitDate = Date()
         if let knownHead {
             (head, treeSHA) = knownHead
         } else {
@@ -111,15 +114,33 @@ public actor SyncEngine {
                 return
             }
             if head == rec.head, claims.isEmpty { return }
-            treeSHA = try await client.treeSHA(owner: rec.owner, repo: name, commit: head)
+            let info = try await client.commitInfo(owner: rec.owner, repo: name, commit: head)
+            treeSHA = info.tree
+            if let date = info.date { commitDate = date }
         }
         let entries = try await client.fullTree(owner: rec.owner, repo: name, sha: treeSHA)
-        try apply(repo: rec, head: head, entries: entries, claims: claims)
+        let meta = await loadMeta(rec, entries: entries)
+        try apply(repo: rec, head: head, entries: entries, claims: claims, meta: meta, fallbackDate: commitDate)
+    }
+
+    /// Reads `.gitdrive/meta.json` from a tree. A missing or unreadable file just means no stored dates.
+    private func loadMeta(_ rec: RepoRecord, entries: [TreeEntry]) async -> DriveMeta {
+        guard let entry = entries.first(where: { $0.path == Reserved.metaFile && $0.type == .blob }) else { return DriveMeta() }
+        if let cached = metaCache[entry.sha] { return cached }
+        guard let data = try? await client.blobData(owner: rec.owner, repo: rec.name, sha: entry.sha) else { return DriveMeta() }
+        let meta = DriveMeta.decode(data)
+        metaCache[entry.sha] = meta
+        return meta
     }
 
     /// Makes the store match `entries`. `claims` maps a path to the item ID that should own it,
     /// which is how renames, moves and new local items keep their IDs.
-    func apply(repo rec: RepoRecord, head: String?, entries: [TreeEntry], claims: [String: String]) throws {
+    /// Dates come from the meta file. Files it doesn't list (added outside GitDrive) get `fallbackDate`,
+    /// the commit date, when their contents change.
+    func apply(
+        repo rec: RepoRecord, head: String?, entries: [TreeEntry], claims: [String: String],
+        meta: DriveMeta = DriveMeta(), fallbackDate: Date = Date()
+    ) throws {
         struct Remote { let isDirectory: Bool; let sha: String?; let size: Int64 }
         var remote: [String: Remote] = [:]
         for e in entries {
@@ -132,7 +153,7 @@ public actor SyncEngine {
                 if !Reserved.isHidden(path: e.path) { remote[e.path] = Remote(isDirectory: false, sha: e.sha, size: e.size ?? 0) }
             }
         }
-        let now = Date()
+        let now = fallbackDate
 
         try store.write { w in
             guard let root = try w.item(repo: rec.name, path: "") else { return }
@@ -153,7 +174,7 @@ public actor SyncEngine {
                     if let atPath, atPath.id != claimedID, !claimedIDs.contains(atPath.id) {
                         try w.delete(atPath)
                     }
-                    if item.sha != r.sha { item.modified = now }
+                    if let date = meta.modified[path] { item.modified = date } else if item.sha != r.sha { item.modified = now }
                     item.repo = rec.name
                     item.path = path
                     item.parentID = parentID
@@ -162,8 +183,10 @@ public actor SyncEngine {
                     item.size = r.size
                     try w.upsert(item)
                 } else if var item = atPath, !claimedIDs.contains(item.id) {
-                    guard item.sha != r.sha || item.isDirectory != r.isDirectory || item.parentID != parentID || item.size != r.size else { continue }
-                    if item.sha != r.sha { item.modified = now }
+                    let modified = meta.modified[path] ?? (item.sha != r.sha ? now : item.modified)
+                    guard item.sha != r.sha || item.isDirectory != r.isDirectory || item.parentID != parentID
+                        || item.size != r.size || item.modified != modified else { continue }
+                    item.modified = modified
                     item.sha = r.sha
                     item.size = r.size
                     item.isDirectory = r.isDirectory
@@ -174,7 +197,7 @@ public actor SyncEngine {
                     if let atPath, claims[path] != nil { try w.delete(atPath) }
                     try w.upsert(ItemRecord(
                         id: claims[path] ?? UUID().uuidString, repo: rec.name, path: path, parentID: parentID,
-                        isDirectory: r.isDirectory, sha: r.sha, size: r.size, modified: now, seq: 0
+                        isDirectory: r.isDirectory, sha: r.sha, size: r.size, modified: meta.modified[path] ?? now, seq: 0
                     ))
                 }
             }
@@ -224,23 +247,26 @@ public actor SyncEngine {
         return item
     }
 
-    public func createFile(parentID: String, name: String, contents: URL) async throws -> ItemRecord {
+    public func createFile(parentID: String, name: String, contents: URL, modified: Date? = nil) async throws -> ItemRecord {
         if parentID == ItemStore.rootID { throw DriveError.filesNotAllowedInRoot }
         let (repo, dir) = try location(of: parentID)
         let path = joinPath(dir, name)
         if let existing = try store.item(repo: repo.name, path: path) {
             // The system re-creates items it already knows after a reimport. Treat that as an edit.
-            return try await modify(id: existing.id, newName: nil, newParentID: nil, contents: contents)
+            return try await modify(id: existing.id, newName: nil, newParentID: nil, contents: contents, modified: modified)
         }
         let sha = try await upload(contents, to: repo, name: name)
         let id = UUID().uuidString
-        try await commit(repo: repo.name, edits: [.put(path: path, sha: sha)], claims: [path: id], message: "Add \(path)")
+        try await commit(
+            repo: repo.name, edits: [.put(path: path, sha: sha)], claims: [path: id],
+            dates: [path: modified ?? Date()], message: "Add \(path)"
+        )
         guard let item = try store.item(id: id) else { throw DriveError.noSuchItem }
         return item
     }
 
     /// Applies a rename, a move, new contents, or any mix of them.
-    public func modify(id: String, newName: String?, newParentID: String?, contents: URL?) async throws -> ItemRecord {
+    public func modify(id: String, newName: String?, newParentID: String?, contents: URL?, modified: Date? = nil) async throws -> ItemRecord {
         guard let item = try store.item(id: id), let repo = try store.repo(named: item.repo) else { throw DriveError.noSuchItem }
 
         if item.path.isEmpty {
@@ -253,11 +279,14 @@ public actor SyncEngine {
         let targetPath = joinPath(targetDir, newName ?? item.filename)
 
         if targetRepo.name != item.repo {
-            return try await moveAcrossRepos(item, from: repo, to: targetRepo, path: targetPath, contents: contents)
+            return try await moveAcrossRepos(
+                item, from: repo, to: targetRepo, path: targetPath, contents: contents, modified: modified ?? item.modified
+            )
         }
 
         var edits: [Edit] = []
         var claims: [String: String] = [:]
+        var dates: [String: Date] = [:]
         let moved = targetPath != item.path
         if moved, try store.item(repo: repo.name, path: targetPath) != nil { throw DriveError.filenameCollision }
 
@@ -275,11 +304,12 @@ public actor SyncEngine {
             if moved { edits.append(.delete(path: item.path)) }
             edits.append(.put(path: targetPath, sha: sha, baseSHA: contents == nil ? nil : item.sha))
             claims[targetPath] = item.id
+            dates[targetPath] = modified ?? (contents == nil ? item.modified : Date())
             if !moved, contents == nil { return item }
         }
 
         let verb = moved ? "Move \(item.path) to \(targetPath)" : "Update \(item.path)"
-        try await commit(repo: repo.name, edits: edits, claims: claims, message: verb)
+        try await commit(repo: repo.name, edits: edits, claims: claims, dates: dates, message: verb)
         guard let updated = try store.item(id: id) else { throw DriveError.noSuchItem }
         return updated
     }
@@ -308,7 +338,9 @@ public actor SyncEngine {
         return updated
     }
 
-    private func moveAcrossRepos(_ item: ItemRecord, from: RepoRecord, to: RepoRecord, path: String, contents: URL?) async throws -> ItemRecord {
+    private func moveAcrossRepos(
+        _ item: ItemRecord, from: RepoRecord, to: RepoRecord, path: String, contents: URL?, modified: Date
+    ) async throws -> ItemRecord {
         if item.isDirectory {
             throw DriveError.unsupportedMove("Moving folders between top-level folders isn't supported yet. Copy it instead.")
         }
@@ -320,7 +352,10 @@ public actor SyncEngine {
         }
         if try store.item(repo: to.name, path: path) != nil { throw DriveError.filenameCollision }
         let sha = try await upload(source, to: to, name: item.filename)
-        try await commit(repo: to.name, edits: [.put(path: path, sha: sha)], claims: [path: item.id], message: "Add \(path)")
+        try await commit(
+            repo: to.name, edits: [.put(path: path, sha: sha)], claims: [path: item.id],
+            dates: [path: modified], message: "Add \(path)"
+        )
         try await commit(repo: from.name, edits: [.delete(path: item.path)], claims: [:], message: "Move \(item.path) to \(to.name)")
         guard let updated = try store.item(id: item.id) else { throw DriveError.noSuchItem }
         return updated
@@ -331,6 +366,7 @@ public actor SyncEngine {
     private struct PendingCommit {
         let edits: [Edit]
         let claims: [String: String]
+        let dates: [String: Date]
         let message: String
         let continuation: CheckedContinuation<Void, Error>
     }
@@ -339,9 +375,11 @@ public actor SyncEngine {
     private var draining: Set<String> = []
 
     /// Queues edits for a repo. Edits that arrive while a commit is in flight are batched into the next one.
-    func commit(repo: String, edits: [Edit], claims: [String: String], message: String) async throws {
+    func commit(repo: String, edits: [Edit], claims: [String: String], dates: [String: Date] = [:], message: String) async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            pending[repo, default: []].append(PendingCommit(edits: edits, claims: claims, message: message, continuation: c))
+            pending[repo, default: []].append(
+                PendingCommit(edits: edits, claims: claims, dates: dates, message: message, continuation: c)
+            )
             if !draining.contains(repo) {
                 draining.insert(repo)
                 Task { await self.drain(repo) }
@@ -373,9 +411,30 @@ public actor SyncEngine {
             let remoteEntries = try await client.fullTree(owner: rec.owner, repo: name, sha: baseTree)
 
             var claims: [String: String] = [:]
-            for p in batch { claims.merge(p.claims) { _, new in new } }
-            let changes = try expand(batch.flatMap(\.edits), remote: remoteEntries, repo: name, claims: &claims)
+            var dates: [String: Date] = [:]
+            for p in batch {
+                claims.merge(p.claims) { _, new in new }
+                dates.merge(p.dates) { _, new in new }
+            }
+            let oldMeta = await loadMeta(rec, entries: remoteEntries)
+            var changes = try expand(
+                batch.flatMap(\.edits), remote: remoteEntries, repo: name, claims: &claims, dates: &dates, meta: oldMeta
+            )
             if changes.isEmpty { return }
+
+            var meta = oldMeta
+            for change in changes {
+                if change.sha == nil {
+                    meta.modified[change.path] = nil
+                } else if let date = dates[change.path] {
+                    meta.modified[change.path] = date.wholeSeconds
+                }
+            }
+            if meta != oldMeta {
+                let blob = try await client.createBlob(owner: rec.owner, repo: name, data: try meta.encoded())
+                metaCache[blob] = meta
+                changes.append(TreeChange(path: Reserved.metaFile, sha: blob))
+            }
 
             let message = batch.count == 1 ? batch[0].message : "Update \(batch.count) items from GitDrive"
             let tree = try await client.createTree(owner: rec.owner, repo: name, base: baseTree, changes: changes)
@@ -392,7 +451,11 @@ public actor SyncEngine {
     }
 
     /// Turns edits into tree changes. A `put` whose base no longer matches GitHub becomes a conflict copy.
-    func expand(_ edits: [Edit], remote: [TreeEntry], repo: String, claims: inout [String: String]) throws -> [TreeChange] {
+    /// Dates follow their files: to the conflict copy, and to the new paths of a moved folder.
+    func expand(
+        _ edits: [Edit], remote: [TreeEntry], repo: String, claims: inout [String: String],
+        dates: inout [String: Date], meta: DriveMeta = DriveMeta()
+    ) throws -> [TreeChange] {
         let blobs = remote.filter { $0.type == .blob }
         let remoteSHA = Dictionary(blobs.map { ($0.path, $0.sha) }, uniquingKeysWith: { a, _ in a })
         var out: [TreeChange] = []
@@ -403,6 +466,7 @@ public actor SyncEngine {
                     let copy = conflictPath(for: path)
                     log.notice("Conflict on \(path, privacy: .private), saving local copy")
                     claims[path] = nil
+                    dates[copy] = dates.removeValue(forKey: path)
                     out.append(TreeChange(path: copy, sha: sha, mode: mode))
                 } else {
                     out.append(TreeChange(path: path, sha: sha, mode: mode))
@@ -415,8 +479,10 @@ public actor SyncEngine {
                 }
             case let .moveFolder(from, to):
                 for b in blobs where b.path.hasPrefix(from + "/") {
+                    let newPath = to + b.path.dropFirst(from.count)
                     out.append(TreeChange(path: b.path, sha: nil, mode: b.mode))
-                    out.append(TreeChange(path: to + b.path.dropFirst(from.count), sha: b.sha, mode: b.mode))
+                    out.append(TreeChange(path: newPath, sha: b.sha, mode: b.mode))
+                    if let date = meta.modified[b.path] { dates[newPath] = date }
                 }
             }
         }

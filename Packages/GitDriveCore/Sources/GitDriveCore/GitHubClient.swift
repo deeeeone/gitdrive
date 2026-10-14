@@ -123,9 +123,19 @@ public actor GitHubClient {
     }
 
     public func treeSHA(owner: String, repo: String, commit: String) async throws -> String {
-        struct Commit: Decodable { struct Tree: Decodable { let sha: String }; let tree: Tree }
+        try await commitInfo(owner: owner, repo: repo, commit: commit).tree
+    }
+
+    /// The commit's tree and its committer date.
+    public func commitInfo(owner: String, repo: String, commit: String) async throws -> (tree: String, date: Date?) {
+        struct Commit: Decodable {
+            struct Tree: Decodable { let sha: String }
+            struct Person: Decodable { let date: String? }
+            let tree: Tree
+            let committer: Person?
+        }
         let c: Commit = try await get("repos/\(owner)/\(repo)/git/commits/\(commit)", cache: true)
-        return c.tree.sha
+        return (c.tree.sha, c.committer?.date.flatMap { ISO8601DateFormatter().date(from: $0) })
     }
 
     public func tree(owner: String, repo: String, sha: String, recursive: Bool) async throws -> GitTree {
@@ -171,6 +181,13 @@ public actor GitHubClient {
             }
             return url
         }
+    }
+
+    /// A blob's bytes in memory. Only for small files such as GitDrive's own metadata.
+    public func blobData(owner: String, repo: String, sha: String) async throws -> Data {
+        let url = try await downloadBlob(owner: owner, repo: repo, sha: sha)
+        defer { try? FileManager.default.removeItem(at: url) }
+        return try Data(contentsOf: url)
     }
 
     public func createBlob(owner: String, repo: String, contentsOf file: URL) async throws -> String {

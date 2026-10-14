@@ -98,7 +98,7 @@ final class FakeGitHub: @unchecked Sendable {
                 return (200, encode(["object": ["sha": head]]))
             case ("GET", "git", "commits"):
                 guard let c = commits[rest[2]] else { return (404, Data()) }
-                return (200, encode(["tree": ["sha": c.tree]]))
+                return (200, encode(["tree": ["sha": c.tree], "committer": ["date": "2026-01-02T03:04:05Z"]]))
             case ("GET", "git", "trees"):
                 guard let flat = trees[rest[2]] else { return (404, Data()) }
                 return (200, encode(["sha": rest[2], "truncated": false, "tree": treeListing(flat)]))

@@ -105,6 +105,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
         let name = itemTemplate.filename
         let parent = itemTemplate.parentItemIdentifier.storeID
         let type = itemTemplate.contentType ?? .data
+        let modified = itemTemplate.contentModificationDate ?? nil
         let contents = url
         Task {
             do {
@@ -116,7 +117,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 if type.conforms(to: .folder) || type.conforms(to: .directory) {
                     record = try await engine.createFolder(parentID: parent, name: name)
                 } else {
-                    record = try await engine.createFile(parentID: parent, name: name, contents: contents ?? Self.emptyFile())
+                    record = try await engine.createFile(
+                        parentID: parent, name: name, contents: contents ?? Self.emptyFile(), modified: modified
+                    )
                 }
                 done.value(DriveItem(record), [], false, nil)
             } catch {
@@ -143,6 +146,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
         let newName = changedFields.contains(.filename) ? item.filename : nil
         let newParent = changedFields.contains(.parentItemIdentifier) ? item.parentItemIdentifier.storeID : nil
         let contents = changedFields.contains(.contents) ? newContents : nil
+        let modified = changedFields.contains(.contentModificationDate) ? (item.contentModificationDate ?? nil) : nil
         Task {
             do {
                 let engine = try self.engine()
@@ -152,7 +156,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                     guard let existing = try engine.store.item(id: id) else { throw NSFileProviderError(.noSuchItem) }
                     record = existing
                 } else {
-                    record = try await engine.modify(id: id, newName: newName, newParentID: newParent, contents: contents)
+                    record = try await engine.modify(
+                        id: id, newName: newName, newParentID: newParent, contents: contents, modified: modified
+                    )
                 }
                 done.value(DriveItem(record), [], false, nil)
             } catch {

@@ -84,7 +84,7 @@ struct SyncEngineTests {
         #expect(fake.files(repo: "drive-docs")["f/m.txt"] == "two")
 
         try await engine.delete(id: folder.id)
-        #expect(fake.files(repo: "drive-docs").keys.sorted() == [".gitdrive-keep"])
+        #expect(fake.files(repo: "drive-docs").keys.sorted() == [".gitdrive-keep", Reserved.metaFile])
         #expect(try store.item(id: file.id) == nil)
     }
 
@@ -126,6 +126,32 @@ struct SyncEngineTests {
         #expect(try store.item(id: a)?.path == "a.txt")
     }
 
+    @Test func modificationDatesSurviveSyncAndRename() async throws {
+        fake.seed(repo: "drive-docs", files: [".gitdrive-keep": "", "old.txt": "from github"])
+        try await engine.syncAll()
+        let folder = try id("drive-docs", "")
+        // Files GitDrive didn't write fall back to the commit date.
+        #expect(try store.item(repo: "drive-docs", path: "old.txt")?.modified == ISO8601DateFormatter().date(from: "2026-01-02T03:04:05Z"))
+
+        let made = Date(timeIntervalSince1970: 1_700_000_000.75)
+        let file = try await engine.createFile(parentID: folder, name: "a.txt", contents: temp("x"), modified: made)
+        #expect(file.modified == made.wholeSeconds)
+        #expect(fake.files(repo: "drive-docs")[Reserved.metaFile]?.contains("2023-11-14T22:13:20Z") == true)
+
+        let renamed = try await engine.modify(id: file.id, newName: "b.txt", newParentID: nil, contents: nil)
+        #expect(renamed.modified == made.wholeSeconds)
+
+        // A second Mac with an empty index reads the same dates from the repo.
+        let otherStore = try ItemStore(url: nil)
+        let other = SyncEngine(client: engine.client, store: otherStore)
+        try await other.syncAll()
+        #expect(try otherStore.item(repo: "drive-docs", path: "b.txt")?.modified == made.wholeSeconds)
+        #expect(try otherStore.item(repo: "drive-docs", path: Reserved.metaFile) == nil)
+
+        try await engine.delete(id: file.id)
+        #expect(fake.files(repo: "drive-docs")[Reserved.metaFile]?.contains("b.txt") == false)
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))
@@ -145,7 +171,7 @@ struct SyncEngineTests {
             }
             try await group.waitForAll()
         }
-        #expect(fake.files(repo: "drive-docs").count == 9)
+        #expect(fake.files(repo: "drive-docs").keys.filter { $0.hasPrefix("f") }.count == 8)
         #expect(fake.commitCount(repo: "drive-docs") - before < 8)
     }
 }
