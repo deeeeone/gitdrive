@@ -90,7 +90,7 @@ Choose the **GitDrive** scheme and press Run.
 ## First run
 
 1. Click the cloud icon in the menu bar.
-2. Sign in. Choose **Sign in with GitHub** (if the build has an OAuth Client ID), or paste a [personal access token](https://github.com/settings/tokens/new?scopes=repo&description=GitDrive) with the `repo` scope.
+2. Sign in. Choose **Sign in with GitHub** (if the build has an OAuth Client ID), or paste a [personal access token](https://github.com/settings/tokens/new?scopes=repo,delete_repo&description=GitDrive) with the `repo` and `delete_repo` scopes. Without `delete_repo`, deleting a top-level folder fails unless you switch it to archive.
 3. If macOS asks, turn on GitDrive in **System Settings → General → Login Items & Extensions → File Providers**.
 4. Click **Open in Finder**. Make a folder at the top level and GitDrive creates a private repo for it.
 
@@ -114,7 +114,8 @@ Please read GitHub's [Acceptable Use Policies](https://docs.github.com/en/site-p
 
 - Your GitHub token is stored only in the macOS Keychain, shared between the app and its extension.
 - Repos GitDrive creates are always private.
-- GitDrive never deletes a repo. Removing a top-level folder archives the repo instead.
+- Deleting a top-level folder deletes its repo, after Finder asks. Choose **Settings → General → Top-level folders → Archives its GitHub repo** if you'd rather keep a read-only copy on GitHub.
+- Deleting anything else is a commit, so it can be recovered from the repo's history.
 - The only force-push is Compact History, which asks first.
 - No analytics, no telemetry, no servers other than GitHub.
 
@@ -124,7 +125,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 - [ ] Git LFS for files over 100 MB
 - [x] Modification dates stored in the repo
-- [ ] Moving folders between top-level folders
+- [x] Moving folders between top-level folders
 - [ ] Shared folders (repos you collaborate on)
 - [ ] Signed and notarized release builds
 

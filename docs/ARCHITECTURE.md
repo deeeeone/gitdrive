@@ -13,7 +13,8 @@ The app and the extension share two things: the Keychain access group that holds
 ## Mapping GitHub onto a drive
 
 - The drive root lists every repo you own whose name starts with `drive-`. `drive-photos` shows up as `photos`.
-- A new folder at the root creates a private repo. Renaming it renames the repo. Deleting it archives the repo.
+- A new folder at the root creates a private repo. Renaming it renames the repo. Deleting it deletes the repo, or archives it if that's chosen in Settings.
+- Moving a folder between top-level folders copies every file into the other repo and commits there first, then deletes the folder from the original repo in a second commit. If the copy fails, the original is untouched.
 - Inside a repo, folders and files map to git trees and blobs on the default branch.
 - Git can't store empty folders, so GitDrive writes a hidden `.gitdrive-keep` file into them. Paths under `.gitdrive/` are reserved for GitDrive's own data. Both are hidden from Finder.
 - `.DS_Store`, `._*` and `.localized` files stay local and are never committed.

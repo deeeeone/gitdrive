@@ -10,6 +10,12 @@ All notable changes to this project are documented here. The format is based on 
 - README screenshots.
 - File modification dates are stored in `.gitdrive/meta.json` and shown on every Mac. Files added outside GitDrive show the date of the commit GitDrive found them in.
 
+- Folders can be moved between top-level folders. Files are copied to the new repo before the old copy is deleted.
+
+### Changed
+
+- Deleting a top-level folder now deletes its GitHub repo. Settings can switch this back to archiving. Sign-in asks for the `delete_repo` scope.
+
 ### Fixed
 
 - Open in Finder works from the sandboxed app.
