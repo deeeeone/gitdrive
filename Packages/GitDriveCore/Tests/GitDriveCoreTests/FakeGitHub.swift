@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import GitDriveCore
 
@@ -20,6 +21,14 @@ final class FakeGitHub: @unchecked Sendable {
         return try body()
     }
 
+    /// Git names blobs by their contents ("blob <size>\0<bytes>", SHA-1), so equal contents share a SHA.
+    private func blobSHA(_ data: Data) -> String {
+        var hasher = Insecure.SHA1()
+        hasher.update(data: Data("blob \(data.count)\0".utf8))
+        hasher.update(data: data)
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
     private func newSHA() -> String {
         counter += 1
         return String(format: "%040d", counter)
@@ -30,7 +39,7 @@ final class FakeGitHub: @unchecked Sendable {
         sync {
             var flat: [String: String] = [:]
             for (path, text) in files {
-                let sha = newSHA()
+                let sha = blobSHA(Data(text.utf8))
                 blobs[sha] = Data(text.utf8)
                 flat[path] = sha
             }
@@ -47,7 +56,7 @@ final class FakeGitHub: @unchecked Sendable {
         sync {
             let head = repos[repo]!
             var flat = trees[commits[head]!.tree]!
-            let sha = newSHA()
+            let sha = blobSHA(Data(text.utf8))
             blobs[sha] = Data(text.utf8)
             flat[path] = sha
             let tree = newSHA()
@@ -171,8 +180,9 @@ final class FakeGitHub: @unchecked Sendable {
             if method == "PUT", rest.first == "contents" {
                 let filePath = rest.dropFirst().joined(separator: "/")
                 var flat = trees[commits[head]!.tree]!
-                let sha = newSHA()
-                blobs[sha] = Data(base64Encoded: json["content"] as? String ?? "") ?? Data()
+                let data = Data(base64Encoded: json["content"] as? String ?? "") ?? Data()
+                let sha = blobSHA(data)
+                blobs[sha] = data
                 flat[filePath] = sha
                 let tree = newSHA()
                 trees[tree] = flat
@@ -199,8 +209,9 @@ final class FakeGitHub: @unchecked Sendable {
                 guard let data = blobs[rest[2]] else { return (404, Data()) }
                 return (200, data)
             case ("POST", "git", "blobs"):
-                let sha = newSHA()
-                blobs[sha] = Data(base64Encoded: json["content"] as? String ?? "") ?? Data()
+                let data = Data(base64Encoded: json["content"] as? String ?? "") ?? Data()
+                let sha = blobSHA(data)
+                blobs[sha] = data
                 return (201, encode(["sha": sha]))
             case ("POST", "git", "trees"):
                 var flat = trees[json["base_tree"] as! String] ?? [:]

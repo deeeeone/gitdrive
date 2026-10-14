@@ -48,6 +48,8 @@ public actor SyncEngine {
     var metaCache: [String: DriveMeta] = [:]
     /// Each plain repo's meta file as of its last refresh.
     var currentMeta: [String: DriveMeta] = [:]
+    /// Paths whose last save turned into a conflict copy, so the caller can replace the local file.
+    var conflicted: Set<String> = []
 
     let repoDeletion: @Sendable () -> RepoDeletion
     let lfsThreshold: @Sendable () -> Int64?
@@ -320,6 +322,13 @@ public actor SyncEngine {
         return item
     }
 
+    /// Whether the last save to this item became a conflict copy. Clears the flag.
+    /// When true, the item now holds GitHub's version and the local file should be downloaded again.
+    public func takeConflict(id: String) -> Bool {
+        guard let item = try? store.item(id: id) else { return false }
+        return conflicted.remove("\(item.repo):\(item.path)") != nil
+    }
+
     /// Applies a rename, a move, new contents, or any mix of them.
     public func modify(id: String, newName: String?, newParentID: String?, contents: URL?, modified: Date? = nil) async throws -> ItemRecord {
         guard let item = try store.item(id: id), let repo = try store.repo(named: item.repo) else { throw DriveError.noSuchItem }
@@ -357,6 +366,7 @@ public actor SyncEngine {
         } else {
             var sha = item.sha ?? ""
             if let contents { (sha, lfs) = try await upload(contents, to: repo, name: item.filename) }
+            if !moved, sha == item.sha, modified.map({ $0.wholeSeconds == item.modified.wholeSeconds }) ?? true { return item }
             if moved { edits.append(.delete(path: item.path)) }
             edits.append(.put(path: targetPath, sha: sha, baseSHA: contents == nil ? nil : item.sha))
             claims[targetPath] = item.id
@@ -604,6 +614,11 @@ public actor SyncEngine {
 
             let message = batch.count == 1 ? batch[0].message : "Update \(batch.count) items from GitDrive"
             let tree = try await client.createTree(owner: rec.owner, repo: name, base: baseTree, changes: changes)
+            // macOS sometimes sends contents that are already on GitHub. Don't make empty commits.
+            if tree == baseTree {
+                try await refresh(name)
+                return
+            }
             let commit = try await client.createCommit(owner: rec.owner, repo: name, message: message, tree: tree, parents: [head])
             do {
                 try await client.updateRef(owner: rec.owner, repo: name, branch: rec.branch, sha: commit)
@@ -633,6 +648,7 @@ public actor SyncEngine {
                     let copy = conflictPath(for: path)
                     log.notice("Conflict on \(path, privacy: .private), saving local copy")
                     claims[path] = nil
+                    conflicted.insert("\(repo):\(path)")
                     dates[copy] = dates.removeValue(forKey: path)
                     out.append(TreeChange(path: copy, sha: sha, mode: mode))
                 } else {

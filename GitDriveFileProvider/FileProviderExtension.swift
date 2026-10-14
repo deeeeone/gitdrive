@@ -168,7 +168,10 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                         id: id, newName: newName, newParentID: newParent, contents: contents, modified: modified
                     )
                 }
-                done.value(DriveItem(record), [], false, nil)
+                // After a conflict the item holds GitHub's version and the local edit lives on as the
+                // conflict copy, so macOS must download the original again.
+                let refetch = await engine.takeConflict(id: id)
+                done.value(DriveItem(record), [], refetch, nil)
             } catch {
                 self.log.error("Modify failed: \(String(describing: error), privacy: .public)")
                 done.value(nil, [], false, fileProviderError(error))
