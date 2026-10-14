@@ -294,9 +294,59 @@ private struct ExtraOptions: View {
     }
 }
 
-/// Filled in by the passcode feature.
+/// Set the passcode and duress passcode, and choose decoy folders. Only shown after a full unlock,
+/// so someone who used the duress passcode can't see that decoys exist.
 private struct PasscodeOptions: View {
-    var body: some View { EmptyView() }
+    @Environment(AppModel.self) private var model
+    @State private var passcode = ""
+    @State private var duress = ""
+    @State private var saved = false
+    @State private var decoys = AppConfig.decoyRepos
+
+    var body: some View {
+        if AppConfig.passcodeIsSet, model.access != .full {
+            Text("Unlock with your passcode to change these settings.").font(.caption).foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                SecureField(AppConfig.passcodeIsSet ? "New passcode" : "Passcode", text: $passcode)
+                SecureField("Duress passcode (optional)", text: $duress)
+                HStack {
+                    Button(AppConfig.passcodeIsSet ? "Change Passcode" : "Set Passcode") {
+                        try? PasscodeStore().set(passcode: passcode, duress: duress)
+                        passcode = ""
+                        duress = ""
+                        saved = true
+                        AppConfig.unlock(decoy: false)
+                        model.accessChanged()
+                    }
+                    .disabled(passcode.count < 4)
+                    if AppConfig.passcodeIsSet {
+                        Button("Remove Passcode", role: .destructive) {
+                            PasscodeStore().clear()
+                            model.accessChanged()
+                        }
+                    }
+                    if saved { Text("Saved").font(.caption).foregroundStyle(.secondary) }
+                }
+                Text("At least 4 characters. The duress passcode opens only the decoy folders below; every other encrypted folder disappears from Finder until you unlock with the real passcode.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                let encrypted = model.folders.filter(\.encrypted)
+                if AppConfig.passcodeIsSet, PasscodeStore().hasDuress, !encrypted.isEmpty {
+                    Text("Decoy folders").font(.caption.weight(.semibold))
+                    ForEach(encrypted) { folder in
+                        Toggle(folder.name, isOn: Binding(
+                            get: { decoys.contains(folder.repo.name) },
+                            set: { on in
+                                if on { decoys.insert(folder.repo.name) } else { decoys.remove(folder.repo.name) }
+                                AppConfig.decoyRepos = decoys
+                            }
+                        ))
+                    }
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+        }
+    }
 }
 
 private struct AboutTab: View {

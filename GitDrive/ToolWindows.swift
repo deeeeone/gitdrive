@@ -7,6 +7,10 @@ import SwiftUI
 enum ToolWindows {
     private static var windows: [String: NSWindow] = [:]
 
+    static func close(_ id: String) {
+        windows[id]?.close()
+    }
+
     static func show<Content: View>(_ title: String, id: String, size: CGSize = CGSize(width: 560, height: 420), @ViewBuilder content: () -> Content) {
         NSApp.activate()
         if let existing = windows[id], existing.isVisible {

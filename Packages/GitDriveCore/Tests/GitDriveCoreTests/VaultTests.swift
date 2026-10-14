@@ -43,6 +43,15 @@ struct VaultCryptoTests {
         #expect(throws: VaultError.self) { _ = try FolderKey.random().openChunk(sealed, id: id) }
     }
 
+    @Test func passcodeHashesAreSaltedAndCompared() {
+        let salt = Data(repeating: 7, count: 16)
+        let a = PasscodeStore.hash("1234", salt: salt)
+        #expect(a.count == 32)
+        #expect(PasscodeStore.equal(a, PasscodeStore.hash("1234", salt: salt)))
+        #expect(!PasscodeStore.equal(a, PasscodeStore.hash("1235", salt: salt)))
+        #expect(!PasscodeStore.equal(a, PasscodeStore.hash("1234", salt: Data(repeating: 8, count: 16))))
+    }
+
     @Test func folderKeyWrapsToPublicKeyOnly() throws {
         let identity = try VaultIdentity.generate()
         let folder = FolderKey.random()

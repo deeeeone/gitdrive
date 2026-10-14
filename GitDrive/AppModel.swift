@@ -262,7 +262,13 @@ final class AppModel {
 
     /// Starts the unlock the settings call for. The passcode Extra adds its own prompt.
     func beginUnlock() {
-        Task { await unlockWithTouchID() }
+        guard AppConfig.isOn(.passcode), AppConfig.passcodeIsSet else {
+            Task { await unlockWithTouchID() }
+            return
+        }
+        ToolWindows.show("Unlock", id: "unlock", size: CGSize(width: 320, height: 220)) {
+            UnlockView(model: self) { ToolWindows.close("unlock") }
+        }
     }
 
     func accessChanged() {
