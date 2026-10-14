@@ -243,3 +243,68 @@ struct EncryptedFolderTests {
         #expect(try String(contentsOf: try await engine.download(id: diary.id).0, encoding: .utf8) == "dear diary")
     }
 }
+
+/// Mutable lock state for tests, standing in for the shared settings.
+final class LockBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _open: Set<String>?
+    var hide = false
+    func set(_ repos: Set<String>?) { lock.withLock { _open = repos } }
+    func canOpen(_ repo: String) -> Bool { lock.withLock { _open.map { $0.contains(repo) } ?? true } }
+    var key: String { lock.withLock { "\(_open?.sorted() ?? ["*"])\(hide)" } }
+}
+
+@Suite("Locking", .serialized)
+struct LockingTests {
+    let fake = FakeGitHub()
+    let identity: VaultIdentity
+    let client: GitHubClient
+    let box = LockBox()
+
+    init() throws {
+        identity = try VaultIdentity.generate()
+        client = GitHubClient(token: "test", session: FakeProtocol.session(for: fake))
+    }
+
+    private func engine(_ store: ItemStore) -> SyncEngine {
+        let box = box, identity = identity
+        return SyncEngine(
+            client: client, store: store, identity: { identity }, encryptNewFolders: { true },
+            canOpen: { box.canOpen($0) }, hideLocked: { box.hide }, accessKey: { box.key }
+        )
+    }
+
+    @Test func lockingRemovesContentsAndUnlockingBringsThemBack() async throws {
+        let store = try ItemStore(url: nil)
+        let engine = engine(store)
+        try await engine.syncAll()
+        let real = try await engine.createFolder(parentID: ItemStore.rootID, name: "Real")
+        let decoy = try await engine.createFolder(parentID: ItemStore.rootID, name: "Holiday")
+        let file = try await engine.createFile(parentID: real.id, name: "secret.txt", contents: temp("s"))
+
+        // Touch ID style: locked folders stay listed but empty.
+        box.set([])
+        try await engine.syncAll()
+        #expect(try store.item(id: file.id) == nil)
+        #expect(try store.children(of: ItemStore.rootID).allSatisfy { $0.filename.hasPrefix("Locked folder") })
+        await #expect(throws: VaultError.self) { _ = try await engine.createFile(parentID: try #require(try store.item(repo: real.repo, path: "")).id, name: "x", contents: try temp("x")) }
+
+        // Duress passcode: only the decoy opens, and the real folder isn't listed at all.
+        box.hide = true
+        box.set([decoy.repo])
+        try await engine.syncAll()
+        #expect(try store.children(of: ItemStore.rootID).map(\.filename) == ["Holiday"])
+
+        // Full unlock brings everything back.
+        box.set(nil)
+        try await engine.syncAll()
+        #expect(Set(try store.children(of: ItemStore.rootID).map(\.filename)) == ["Real", "Holiday"])
+        #expect(try store.item(repo: real.repo, path: "secret.txt") != nil)
+    }
+
+    private func temp(_ text: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data(text.utf8).write(to: url)
+        return url
+    }
+}

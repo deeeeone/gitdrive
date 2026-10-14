@@ -60,6 +60,13 @@ struct MenuView: View {
             MenuButton("Open in Finder", symbol: "folder") { Task { await model.openInFinder() } }
             MenuButton("Check for Changes", symbol: "arrow.clockwise") { Task { await model.refresh() } }
             MenuButton("Free Up Space", symbol: "icloud.and.arrow.up") { Task { await model.freeUpSpace() } }
+            if AppConfig.lockRequired, model.hasEncryptedFolders {
+                if model.access == .locked {
+                    MenuButton("Unlock Encrypted Folders…", symbol: "lock.open") { model.beginUnlock() }
+                } else {
+                    MenuButton("Lock Encrypted Folders", symbol: "lock") { model.lock() }
+                }
+            }
             if AppConfig.isOn(.conflictViewer), model.conflictCount > 0 {
                 MenuButton("Resolve \(model.conflictCount) Conflict\(model.conflictCount == 1 ? "" : "s")…", symbol: "exclamationmark.triangle") {
                     Tools.showConflicts(model: model)

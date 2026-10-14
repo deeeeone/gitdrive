@@ -33,7 +33,10 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 lfsThreshold: { AppConfig.lfsThresholdBytes },
                 identity: { IdentityStore().load() },
                 encryptNewFolders: { AppConfig.encryptNewFolders },
-                makeThumbnails: { AppConfig.isOn(.thumbnails) }
+                makeThumbnails: { AppConfig.isOn(.thumbnails) },
+                canOpen: { AppConfig.canOpen(repo: $0) },
+                hideLocked: { AppConfig.hideLockedFolders },
+                accessKey: { AppConfig.accessKey }
             )
             cachedEngine = engine
             return engine

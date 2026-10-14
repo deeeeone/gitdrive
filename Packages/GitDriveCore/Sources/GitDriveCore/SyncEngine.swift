@@ -56,6 +56,12 @@ public actor SyncEngine {
     let identity: @Sendable () -> VaultIdentity?
     let encryptNewFolders: @Sendable () -> Bool
     let makeThumbnails: @Sendable () -> Bool
+    let canOpen: @Sendable (String) -> Bool
+    let hideLocked: @Sendable () -> Bool
+    let accessKey: @Sendable () -> String
+    var lastAccessKey: String?
+    /// Encrypted repos kept out of Finder while locked.
+    var hiddenRepos: Set<String> = []
     /// Thumbnails made at upload time, by repo and blob SHA (or content ID), waiting for the commit.
     var pendingMedia: [String: [String: MediaInfo]] = [:]
     var thumbCache = PackCache()
@@ -76,7 +82,10 @@ public actor SyncEngine {
         lfsThreshold: @escaping @Sendable () -> Int64? = { nil },
         identity: @escaping @Sendable () -> VaultIdentity? = { nil },
         encryptNewFolders: @escaping @Sendable () -> Bool = { false },
-        makeThumbnails: @escaping @Sendable () -> Bool = { false }
+        makeThumbnails: @escaping @Sendable () -> Bool = { false },
+        canOpen: @escaping @Sendable (String) -> Bool = { _ in true },
+        hideLocked: @escaping @Sendable () -> Bool = { false },
+        accessKey: @escaping @Sendable () -> String = { "" }
     ) {
         self.client = client
         self.store = store
@@ -85,12 +94,16 @@ public actor SyncEngine {
         self.identity = identity
         self.encryptNewFolders = encryptNewFolders
         self.makeThumbnails = makeThumbnails
+        self.canOpen = canOpen
+        self.hideLocked = hideLocked
+        self.accessKey = accessKey
     }
 
     // MARK: Remote to local
 
     /// Refreshes the repo list and every repo whose head moved.
     public func syncAll() async throws {
+        recheckAccess()
         let remote = try await client.driveRepos()
         try reconcileRepos(remote)
         lastRepoList = Date()
@@ -126,7 +139,7 @@ public actor SyncEngine {
                     head: old?.head,
                     sizeKB: repo.size
                 ))
-                if existing == nil {
+                if existing == nil, !hiddenRepos.contains(repo.name) {
                     try w.upsert(ItemRecord(
                         id: UUID().uuidString, repo: repo.name, path: "", parentID: ItemStore.rootID,
                         isDirectory: true, sha: nil, size: 0, modified: Date(), seq: 0

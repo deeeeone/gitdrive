@@ -1,5 +1,6 @@
 import AppKit
 @preconcurrency import FileProvider
+import LocalAuthentication
 import GitDriveCore
 import Observation
 import os
@@ -50,6 +51,7 @@ final class AppModel {
     }
 
     var folders: [Folder] = []
+    var access = AppConfig.vaultAccess
     var conflictCount = 0
     var encryptionKeyID: String? = IdentityStore().load()?.keyID
     var encryptNewFolders = AppConfig.encryptNewFolders {
@@ -95,6 +97,7 @@ final class AppModel {
         #endif
         Task { await start() }
         bridgeToken = Bridge.observe { Task { @MainActor in self.handleRequests() } }
+        watchForSleep()
         #if DEBUG
         Snapshot.renderIfRequested(model: self)
         #endif
@@ -143,6 +146,7 @@ final class AppModel {
     /// Asks the extension to pull remote changes and refreshes the folder list.
     func refresh(includeSizes: Bool = true) async {
         guard case .signedIn = account, status != .paused, let client else { return }
+        if access != AppConfig.vaultAccess { access = AppConfig.vaultAccess }
         status = .syncing
         do {
             try await manager?.signalEnumerator(for: .workingSet)
@@ -189,7 +193,10 @@ final class AppModel {
             repoDeletion: { .delete },
             lfsThreshold: { AppConfig.lfsThresholdBytes },
             identity: { IdentityStore().load() },
-            makeThumbnails: { AppConfig.isOn(.thumbnails) }
+            makeThumbnails: { AppConfig.isOn(.thumbnails) },
+            canOpen: { AppConfig.canOpen(repo: $0) },
+            hideLocked: { AppConfig.hideLockedFolders },
+            accessKey: { AppConfig.accessKey }
         )
         self.engine = engine
         return engine
@@ -217,6 +224,52 @@ final class AppModel {
             // Search support is a property of the domain, so the domain is added again to apply it.
             if extra == .search, case .signedIn = account { try? await addDomain() }
             try? await manager?.signalEnumerator(for: .workingSet)
+        }
+    }
+
+    // MARK: Locking
+
+    /// Locks encrypted folders when the Mac sleeps or the screen locks.
+    private func watchForSleep() {
+        let lockNow: @Sendable (Notification) -> Void = { _ in Task { @MainActor in self.lock() } }
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main, using: lockNow)
+        workspace.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main, using: lockNow)
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main, using: lockNow
+        )
+    }
+
+    var hasEncryptedFolders: Bool { encryptionKeyID != nil }
+
+    func lock() {
+        guard AppConfig.lockRequired, AppConfig.session != nil else { return }
+        AppConfig.lock()
+        accessChanged()
+    }
+
+    /// Touch ID, or the Mac password when Touch ID isn't available.
+    func unlockWithTouchID() async {
+        let context = LAContext()
+        do {
+            try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "unlock your encrypted GitDrive folders")
+            AppConfig.unlock(decoy: false)
+            accessChanged()
+        } catch {
+            log.notice("Unlock cancelled: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Starts the unlock the settings call for. The passcode Extra adds its own prompt.
+    func beginUnlock() {
+        Task { await unlockWithTouchID() }
+    }
+
+    func accessChanged() {
+        access = AppConfig.vaultAccess
+        Task {
+            try? await manager?.signalEnumerator(for: .workingSet)
+            if let client { await loadFolders(client: client) }
         }
     }
 

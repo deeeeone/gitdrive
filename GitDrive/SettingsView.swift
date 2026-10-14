@@ -278,10 +278,25 @@ private struct ExtraOptions: View {
 
     var body: some View {
         switch extra {
+        case .touchID, .passcode:
+            Picker("Stay unlocked for", selection: Binding(
+                get: { AppConfig.unlockHours }, set: { AppConfig.unlockHours = $0 }
+            )) {
+                Text("1 hour").tag(1)
+                Text("8 hours").tag(8)
+                Text("24 hours").tag(24)
+            }
+            .font(.callout)
+            if extra == .passcode { PasscodeOptions() }
         default:
             EmptyView()
         }
     }
+}
+
+/// Filled in by the passcode feature.
+private struct PasscodeOptions: View {
+    var body: some View { EmptyView() }
 }
 
 private struct AboutTab: View {

@@ -43,7 +43,7 @@ let targetPackSize = 8 * 1024 * 1024
 
 extension SyncEngine {
     func isVault(_ repo: String) -> Bool {
-        vaults[repo] != nil || lockedRepos.contains(repo)
+        vaults[repo] != nil || lockedRepos.contains(repo) || hiddenRepos.contains(repo)
     }
 
     /// Whether a top-level folder is encrypted, for showing a lock in the UI.
@@ -55,19 +55,29 @@ extension SyncEngine {
     func refreshVault(_ rec: RepoRecord, head: String?, entries: [TreeEntry], claims: [String: String], commitDate: Date) async throws {
         guard let headerEntry = entries.first(where: { $0.path == Reserved.vaultFile }) else { return }
         var state = vaults[rec.name]
+        if !canOpen(rec.name) {
+            try lockVault(rec, head: head)
+            return
+        }
         if state == nil || state?.headerSHA != headerEntry.sha {
             do {
                 state = try await unlock(rec, headerSHA: headerEntry.sha)
             } catch let error as VaultError where error == .locked || error == .wrongKey {
                 log.notice("\(rec.name, privacy: .public) is encrypted and can't be unlocked on this Mac")
-                vaults[rec.name] = nil
-                lockedRepos.insert(rec.name)
-                try apply(repo: rec, head: head, entries: [], claims: [:], displayName: "Locked folder \(rec.name.suffix(6))")
+                try lockVault(rec, head: head)
                 return
             }
         }
         guard var state else { return }
         lockedRepos.remove(rec.name)
+        if hiddenRepos.remove(rec.name) != nil {
+            try store.write { w in
+                try w.upsert(ItemRecord(
+                    id: UUID().uuidString, repo: rec.name, path: "", parentID: ItemStore.rootID,
+                    isDirectory: true, sha: nil, size: 0, modified: Date(), seq: 0
+                ))
+            }
+        }
 
         if let indexEntry = entries.first(where: { $0.path == Reserved.indexFile }), indexEntry.sha != state.indexSHA {
             let sealed = try await client.blobData(owner: rec.owner, repo: rec.name, sha: indexEntry.sha)
@@ -85,6 +95,45 @@ extension SyncEngine {
         )
     }
 
+    /// Forgets the folder key and removes the decrypted listing, which also removes downloaded copies
+    /// from disk. With a passcode the folder disappears entirely; otherwise it shows as "Locked folder".
+    private func lockVault(_ rec: RepoRecord, head: String?) throws {
+        vaults[rec.name] = nil
+        lockedRepos.insert(rec.name)
+        if hideLocked() {
+            hiddenRepos.insert(rec.name)
+            try store.write { w in
+                for item in try w.items(inRepo: rec.name) { try w.delete(item) }
+                if var r = try w.repo(named: rec.name) { r.head = head; try w.saveRepo(r) }
+            }
+        } else {
+            if hiddenRepos.remove(rec.name) != nil {
+                try store.write { w in
+                    try w.upsert(ItemRecord(
+                        id: UUID().uuidString, repo: rec.name, path: "", parentID: ItemStore.rootID,
+                        isDirectory: true, sha: nil, size: 0, modified: Date(), seq: 0
+                    ))
+                }
+            }
+            try apply(repo: rec, head: head, entries: [], claims: [:], displayName: "Locked folder \(rec.name.suffix(6))")
+        }
+    }
+
+    /// When what may be opened changes (unlock, lock, duress), every encrypted folder is refreshed.
+    func recheckAccess() {
+        let key = accessKey()
+        guard key != lastAccessKey else { return }
+        let first = lastAccessKey == nil
+        lastAccessKey = key
+        if first { return }
+        for name in Set(vaults.keys).union(lockedRepos).union(hiddenRepos) {
+            if var rec = try? store.repo(named: name) {
+                rec.head = nil
+                try? store.saveRepo(rec)
+            }
+        }
+    }
+
     private func unlock(_ rec: RepoRecord, headerSHA: String) async throws -> VaultState {
         guard let identity = identity() else { throw VaultError.locked }
         let data = try await client.blobData(owner: rec.owner, repo: rec.name, sha: headerSHA)
@@ -99,7 +148,7 @@ extension SyncEngine {
         guard isVault(rec.name) else {
             return try await client.downloadContents(owner: rec.owner, repo: rec.name, sha: sha)
         }
-        guard let state = snapshot ?? vaults[rec.name] else { throw VaultError.locked }
+        guard canOpen(rec.name), let state = snapshot ?? vaults[rec.name] else { throw VaultError.locked }
         guard let file = state.index.file(withContent: sha) else { throw DriveError.noSuchItem }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: url.path, contents: nil)
@@ -144,7 +193,7 @@ extension SyncEngine {
     }
 
     func stage(data: Data, in repo: String) throws -> String {
-        guard let state = vaults[repo] else { throw VaultError.locked }
+        guard canOpen(repo), let state = vaults[repo] else { throw VaultError.locked }
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("GitDriveStaging", isDirectory: true)
             .appendingPathComponent(repo, isDirectory: true)
