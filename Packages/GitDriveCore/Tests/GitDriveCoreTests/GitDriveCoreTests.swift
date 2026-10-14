@@ -248,6 +248,18 @@ struct SyncEngineTests {
         #expect(fake.files(repo: "drive-docs")["v.txt"] == "one")
     }
 
+    @Test func deletedFilesCanBeFoundAndRestored() async throws {
+        fake.seed(repo: "drive-docs", files: [".gitdrive-keep": "", "keep.txt": "k", "gone.txt": "bye"])
+        try await engine.syncAll()
+        try await engine.delete(id: try id("drive-docs", "gone.txt"))
+
+        let deleted = try await engine.recentlyDeleted()
+        #expect(deleted.map(\.path) == ["gone.txt"])
+        try await engine.restore(try #require(deleted.first))
+        #expect(fake.files(repo: "drive-docs")["gone.txt"] == "bye")
+        #expect(try await engine.recentlyDeleted().isEmpty)
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

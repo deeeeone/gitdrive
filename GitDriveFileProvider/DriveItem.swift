@@ -70,6 +70,7 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
             "top": record.path.isEmpty,
             "plain": !encrypted,
             "versions": !record.isDirectory && AppConfig.isOn(.versions),
+            "deleted": record.isDirectory && AppConfig.isOn(.recentlyDeleted),
         ]
     }
 

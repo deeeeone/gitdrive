@@ -10,8 +10,16 @@ enum Tools {
             ToolWindows.show("Versions", id: "versions-\(request.repo)-\(request.path)") {
                 VersionsView(model: model, repo: request.repo, path: request.path)
             }
+        case .recentlyDeleted:
+            showRecentlyDeleted(model: model, repo: request.repo.isEmpty ? nil : request.repo)
         default:
             break
+        }
+    }
+
+    static func showRecentlyDeleted(model: AppModel, repo: String? = nil) {
+        ToolWindows.show("Recently Deleted", id: "deleted-\(repo ?? "all")") {
+            RecentlyDeletedView(model: model, repo: repo)
         }
     }
 

@@ -36,6 +36,14 @@
 				<key>NSExtensionFileProviderActionName</key>
 				<string>Show Versions…</string>
 			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.deleted == YES ).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>com.diwan.gitdrive.action.recentlyDeleted</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Recently Deleted…</string>
+			</dict>
 		</array>
 		<key>NSExtensionFileProviderDocumentGroup</key>
 		<string>$(GITDRIVE_APP_GROUP)</string>

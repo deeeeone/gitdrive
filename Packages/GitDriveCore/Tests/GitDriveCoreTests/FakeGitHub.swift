@@ -138,6 +138,20 @@ final class FakeGitHub: @unchecked Sendable {
                 }
                 return (200, encode(list))
             }
+            if method == "GET", rest.count == 2, rest[0] == "commits", let commit = commits[rest[1]] {
+                let mine = trees[commit.tree] ?? [:]
+                let before = commit.parents.first.flatMap { commits[$0] }.flatMap { trees[$0.tree] } ?? [:]
+                var files: [[String: Any]] = []
+                for path in Set(mine.keys).union(before.keys).sorted() {
+                    switch (before[path], mine[path]) {
+                    case (nil, .some): files.append(["filename": path, "status": "added"])
+                    case (.some, nil): files.append(["filename": path, "status": "removed"])
+                    case let (a?, b?) where a != b: files.append(["filename": path, "status": "modified"])
+                    default: break
+                    }
+                }
+                return (200, encode(["files": files]))
+            }
             if method == "GET", rest.first == "contents" {
                 let filePath = rest.dropFirst().joined(separator: "/")
                 let ref = req.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first { $0.name == "ref" }?.value ?? head

@@ -87,3 +87,69 @@ extension SyncEngine {
         return snapshot
     }
 }
+
+/// A file removed in the last few weeks that can still be restored from history.
+public struct DeletedFile: Identifiable, Sendable, Hashable {
+    public var id: String { "\(repo):\(path):\(version.id)" }
+    public let repo: String
+    /// Top-level folder name shown to the user.
+    public let folder: String
+    public let path: String
+    public let deletedAt: Date
+    /// The last version before the delete.
+    public let version: FileVersion
+}
+
+extension SyncEngine {
+    /// Files deleted in the last `days` days, newest first. Files that exist again are left out.
+    public func recentlyDeleted(days: Int = 30, repo only: String? = nil, commitLimit: Int = 30) async throws -> [DeletedFile] {
+        let since = Date().addingTimeInterval(-Double(days) * 86400)
+        var out: [DeletedFile] = []
+        for rec in try store.repos() where only == nil || rec.name == only {
+            let folder = (try? store.item(repo: rec.name, path: "")?.filename) ?? rec.name
+            let commits = (try? await client.commits(
+                owner: rec.owner, repo: rec.name, path: isVault(rec.name) ? Reserved.indexFile : nil, since: since, limit: commitLimit
+            )) ?? []
+            if isVault(rec.name) {
+                // Compare each index snapshot with the one before it.
+                var newer: (commit: GitHubClient.CommitSummary, index: VaultIndex)?
+                let chain = commits + (commits.last?.parents.first.map { [GitHubClient.CommitSummary(sha: $0, message: "", date: .distantPast, parents: [])] } ?? [])
+                for commit in chain {
+                    guard let snapshot = try? await vaultSnapshot(rec, commit: commit.sha) else { continue }
+                    if let newer {
+                        for (path, file) in snapshot.index.files where newer.index.files[path] == nil && !Reserved.isHidden(path: path) {
+                            out.append(DeletedFile(
+                                repo: rec.name, folder: folder, path: path, deletedAt: newer.commit.date,
+                                version: FileVersion(id: commit.sha, date: Date(timeIntervalSince1970: file.m), size: file.s, content: file.c, isCurrent: false)
+                            ))
+                        }
+                    }
+                    newer = (commit, snapshot.index)
+                }
+            } else {
+                for commit in commits {
+                    guard let parent = commit.parents.first,
+                          let files = try? await client.changedFiles(owner: rec.owner, repo: rec.name, commit: commit.sha) else { continue }
+                    for file in files where file.status == "removed" && !Reserved.isHidden(path: file.filename) {
+                        guard let old = try await client.fileAt(owner: rec.owner, repo: rec.name, path: file.filename, ref: parent) else { continue }
+                        out.append(DeletedFile(
+                            repo: rec.name, folder: folder, path: file.filename, deletedAt: commit.date,
+                            version: FileVersion(id: parent, date: commit.date, size: old.size, content: old.sha, isCurrent: false)
+                        ))
+                    }
+                }
+            }
+        }
+        // Keep the most recent delete of each path, and only paths that are still gone.
+        var latest: [String: DeletedFile] = [:]
+        for file in out where try store.item(repo: file.repo, path: file.path) == nil {
+            let key = "\(file.repo):\(file.path)"
+            if latest[key].map({ $0.deletedAt < file.deletedAt }) ?? true { latest[key] = file }
+        }
+        return latest.values.sorted { $0.deletedAt > $1.deletedAt }
+    }
+
+    public func restore(_ deleted: DeletedFile) async throws {
+        try await restore(deleted.version, repo: deleted.repo, path: deleted.path)
+    }
+}

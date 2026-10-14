@@ -201,6 +201,21 @@ struct EncryptedFolderTests {
         #expect(try String(contentsOf: url, encoding: .utf8) == "first")
     }
 
+    @Test func encryptedDeletesCanBeRestored() async throws {
+        let store = try ItemStore(url: nil)
+        let engine = engine(store: store, identity: identity)
+        try await engine.syncAll()
+        let folder = try await engine.createFolder(parentID: ItemStore.rootID, name: "D")
+        let file = try await engine.createFile(parentID: folder.id, name: "secret.txt", contents: temp("hidden"))
+        try await engine.delete(id: file.id)
+
+        let deleted = try await engine.recentlyDeleted()
+        #expect(deleted.map(\.path) == ["secret.txt"])
+        try await engine.restore(try #require(deleted.first))
+        let restored = try #require(try store.item(repo: folder.repo, path: "secret.txt"))
+        #expect(try String(contentsOf: try await engine.download(id: restored.id).0, encoding: .utf8) == "hidden")
+    }
+
     @Test func plainFolderCanBeEncrypted() async throws {
         fake.seed(repo: "drive-notes", files: [".gitdrive-keep": "", "diary.txt": "dear diary", "empty/.gitdrive-keep": ""])
         let store = try ItemStore(url: nil)

@@ -60,6 +60,9 @@ struct MenuView: View {
             MenuButton("Open in Finder", symbol: "folder") { Task { await model.openInFinder() } }
             MenuButton("Check for Changes", symbol: "arrow.clockwise") { Task { await model.refresh() } }
             MenuButton("Free Up Space", symbol: "icloud.and.arrow.up") { Task { await model.freeUpSpace() } }
+            if AppConfig.isOn(.recentlyDeleted) {
+                MenuButton("Recently Deleted…", symbol: "trash") { Tools.showRecentlyDeleted(model: model) }
+            }
             MenuButton(model.status == .paused ? "Resume Syncing" : "Pause Syncing",
                        symbol: model.status == .paused ? "play" : "pause") { Task { await model.togglePause() } }
         }
