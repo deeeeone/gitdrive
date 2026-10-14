@@ -206,6 +206,37 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
     }
 }
 
+// MARK: Finder actions
+
+/// Right-click actions declared in Info.plist (NSExtensionFileProviderActions). Anything with a window
+/// is handed to the app, which owns all UI.
+extension FileProviderExtension: NSFileProviderCustomAction {
+    static let actionPrefix = "com.diwan.gitdrive.action."
+
+    func performAction(
+        identifier actionIdentifier: NSFileProviderExtensionActionIdentifier,
+        onItemsWithIdentifiers itemIdentifiers: [NSFileProviderItemIdentifier],
+        completionHandler: @escaping (Error?) -> Void
+    ) -> Progress {
+        let raw = actionIdentifier.rawValue.replacingOccurrences(of: Self.actionPrefix, with: "")
+        guard let kind = ToolRequest.Kind(rawValue: raw) else {
+            completionHandler(NSError(domain: NSCocoaErrorDomain, code: NSFeatureUnsupportedError))
+            return Progress()
+        }
+        do {
+            let store = try engine().store
+            for id in itemIdentifiers {
+                guard let record = try store.item(id: id.rawValue) else { continue }
+                Bridge.send(ToolRequest(kind: kind, repo: record.repo, path: record.path))
+            }
+            completionHandler(nil)
+        } catch {
+            completionHandler(fileProviderError(error))
+        }
+        return Progress()
+    }
+}
+
 extension NSFileProviderItemIdentifier {
     /// The ID used in `ItemStore`, where the root has its own fixed name.
     var storeID: String { self == .rootContainer ? ItemStore.rootID : rawValue }

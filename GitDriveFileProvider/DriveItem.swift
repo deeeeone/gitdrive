@@ -57,6 +57,19 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
 
     var contentModificationDate: Date? { record?.modified }
 
+    /// Facts Finder action rules in Info.plist test with `userInfo.<key> == 1`. Feature flags are folded in,
+    /// so an action only appears when its Extra is on.
+    var userInfo: [AnyHashable: Any]? {
+        guard let record else { return nil }
+        let encrypted = record.displayName != nil
+        return [
+            "file": !record.isDirectory,
+            "folder": record.isDirectory,
+            "top": record.path.isEmpty,
+            "plain": !encrypted,
+        ]
+    }
+
     /// Encrypted top-level folders get a lock badge. Only encrypted repos carry a display name.
     var decorations: [NSFileProviderItemDecorationIdentifier]? {
         guard let record, record.path.isEmpty, record.displayName != nil else { return nil }

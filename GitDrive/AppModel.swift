@@ -67,6 +67,7 @@ final class AppModel {
     /// The app's own engine with an in-memory index. Used to read encrypted folder names and to
     /// encrypt folders; the extension keeps the real index.
     @ObservationIgnored private var engine: SyncEngine?
+    @ObservationIgnored private var bridgeToken: Int32 = 0
 
     static let domain = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("github"), displayName: "GitHub")
     private var manager: NSFileProviderManager? { NSFileProviderManager(for: Self.domain) }
@@ -91,6 +92,7 @@ final class AppModel {
         Snapshot.setUpKeyIfRequested()
         #endif
         Task { await start() }
+        bridgeToken = Bridge.observe { Task { @MainActor in self.handleRequests() } }
         #if DEBUG
         Snapshot.renderIfRequested(model: self)
         #endif
@@ -161,6 +163,21 @@ final class AppModel {
         }
     }
 
+    /// The app's engine, synced with GitHub, for feature windows.
+    func readyEngine() async throws -> SyncEngine {
+        guard let client, let engine = appEngine(client) else { throw GitHubError(.unauthorized, "Sign in to GitHub first") }
+        if try engine.store.repos().isEmpty { try await engine.syncAll() }
+        return engine
+    }
+
+    /// Requests from Finder right-click actions. Each feature adds its own case.
+    func handleRequests() {
+        for request in Bridge.drain() {
+            log.info("Request \(request.kind.rawValue, privacy: .public)")
+            Tools.open(request, model: self)
+        }
+    }
+
     private func appEngine(_ client: GitHubClient) -> SyncEngine? {
         if let engine { return engine }
         guard let store = try? ItemStore(url: nil) else { return nil }
@@ -187,6 +204,11 @@ final class AppModel {
             list.append(Folder(repo: repo, name: name, encrypted: await engine.isEncrypted(repo: repo.name)))
         }
         folders = list.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Called when an Extra is switched on or off in Settings.
+    func extraChanged(_ extra: Extra) {
+        Task { try? await manager?.signalEnumerator(for: .workingSet) }
     }
 
     // MARK: Encryption

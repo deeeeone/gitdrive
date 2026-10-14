@@ -6,10 +6,11 @@ struct SettingsView: View {
         TabView {
             GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
             EncryptionTab().tabItem { Label("Encryption", systemImage: "lock") }
+            ExtrasTab().tabItem { Label("Extras", systemImage: "sparkles") }
             FoldersTab().tabItem { Label("Folders", systemImage: "folder") }
             AboutTab().tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 560, height: 520)
     }
 }
 
@@ -235,6 +236,50 @@ private struct EncryptionTab: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Each readable repo is copied into a new encrypted repo and then permanently deleted with its history.")
+        }
+    }
+}
+
+/// One switch per optional feature, grouped. Features add their own settings below their switch.
+private struct ExtrasTab: View {
+    @Environment(AppModel.self) private var model
+    @State private var refresh = 0
+
+    var body: some View {
+        Form {
+            ForEach(Extra.Group.allCases, id: \.self) { group in
+                Section(group.rawValue) {
+                    ForEach(Extra.allCases.filter { $0.group == group }) { extra in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Toggle(isOn: Binding(
+                                get: { _ = refresh; return AppConfig.isOn(extra) },
+                                set: { AppConfig.set(extra, on: $0); refresh += 1; model.extraChanged(extra) }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(extra.title)
+                                    Text(extra.summary).font(.caption).foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            if AppConfig.isOn(extra) { ExtraOptions(extra: extra) }
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Extra settings shown under a feature's switch when it's on.
+private struct ExtraOptions: View {
+    @Environment(AppModel.self) private var model
+    let extra: Extra
+
+    var body: some View {
+        switch extra {
+        default:
+            EmptyView()
         }
     }
 }
