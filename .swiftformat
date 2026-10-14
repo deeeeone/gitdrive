@@ -1,0 +1,8 @@
+--swiftversion 6.0
+--indent 4
+--maxwidth 140
+--wraparguments before-first
+--wrapcollections before-first
+--stripunusedargs closure-only
+--self remove
+--exclude build,Packages/GitDriveCore/.build

@@ -1,0 +1,10 @@
+included:
+  - GitDrive
+  - GitDriveFileProvider
+  - Packages/GitDriveCore/Sources
+  - Packages/GitDriveCore/Tests
+line_length: 140
+disabled_rules:
+  - identifier_name
+  - force_unwrapping
+  - todo
