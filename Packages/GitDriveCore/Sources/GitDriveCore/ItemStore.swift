@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// One file or folder in the drive. IDs are random and stay the same across renames and moves.
-public struct ItemRecord: Codable, Sendable, Equatable, FetchableRecord, PersistableRecord {
+public struct ItemRecord: Codable, Sendable, Hashable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "items"
 
     public var id: String

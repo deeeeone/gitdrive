@@ -60,6 +60,11 @@ struct MenuView: View {
             MenuButton("Open in Finder", symbol: "folder") { Task { await model.openInFinder() } }
             MenuButton("Check for Changes", symbol: "arrow.clockwise") { Task { await model.refresh() } }
             MenuButton("Free Up Space", symbol: "icloud.and.arrow.up") { Task { await model.freeUpSpace() } }
+            if AppConfig.isOn(.conflictViewer), model.conflictCount > 0 {
+                MenuButton("Resolve \(model.conflictCount) Conflict\(model.conflictCount == 1 ? "" : "s")…", symbol: "exclamationmark.triangle") {
+                    Tools.showConflicts(model: model)
+                }
+            }
             if AppConfig.isOn(.recentlyDeleted) {
                 MenuButton("Recently Deleted…", symbol: "trash") { Tools.showRecentlyDeleted(model: model) }
             }

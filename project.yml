@@ -86,6 +86,9 @@ targets:
             - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.recentlyDeleted
               NSExtensionFileProviderActionName: Recently Deleted…
               NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.deleted == YES ).@count == 1
+            - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.conflict
+              NSExtensionFileProviderActionName: Resolve Conflict…
+              NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.conflict == YES ).@count == 1
           NSFileProviderDecorations:
             - Identifier: $(PRODUCT_BUNDLE_IDENTIFIER).encrypted
               BadgeImageType: com.apple.icon-decoration.badge.locked

@@ -131,6 +131,13 @@ struct SyncEngineTests {
         let copy = try #require(files.first { $0.key.contains("conflict from Mac") })
         #expect(copy.value == "mine")
         #expect(try store.item(id: a)?.path == "a.txt")
+        #expect(await engine.takeConflict(id: a))
+        #expect(await !engine.takeConflict(id: a))
+
+        // Saving contents GitHub already has makes no commit.
+        let before = fake.commitCount(repo: "drive-docs")
+        _ = try await engine.modify(id: a, newName: nil, newParentID: nil, contents: temp("theirs"))
+        #expect(fake.commitCount(repo: "drive-docs") == before)
     }
 
     @Test func modificationDatesSurviveSyncAndRename() async throws {
@@ -278,6 +285,26 @@ struct SyncEngineTests {
 
         let small = try await engine.createFile(parentID: try id("drive-media", ""), name: "s.txt", contents: temp("tiny"))
         #expect(try await engine.partialContents(id: small.id, offset: 0, length: 1, alignment: 4096) == nil)
+    }
+
+    @Test func conflictsCanBeResolved() async throws {
+        fake.seed(repo: "drive-docs", files: ["a.txt": "base", "b.txt": "base"])
+        try await engine.syncAll()
+        for name in ["a.txt", "b.txt"] {
+            fake.remoteEdit(repo: "drive-docs", path: name, text: "theirs")
+            _ = try await engine.modify(id: try id("drive-docs", name), newName: nil, newParentID: nil, contents: temp("mine"))
+        }
+        let found = try await engine.conflicts().sorted { $0.copy.path < $1.copy.path }
+        #expect(found.count == 2)
+        #expect(found[0].original?.path == "a.txt")
+
+        try await engine.resolve(found[0], keeping: .mine)
+        try await engine.resolve(found[1], keeping: .both)
+        let files = fake.files(repo: "drive-docs")
+        #expect(files["a.txt"] == "mine")
+        #expect(files["b.txt"] == "theirs")
+        #expect(files["b (my version).txt"] == "mine")
+        #expect(try await engine.conflicts().isEmpty)
     }
 
     @Test func filesAtRootAreRejected() async throws {

@@ -50,6 +50,7 @@ final class AppModel {
     }
 
     var folders: [Folder] = []
+    var conflictCount = 0
     var encryptionKeyID: String? = IdentityStore().load()?.keyID
     var encryptNewFolders = AppConfig.encryptNewFolders {
         didSet { AppConfig.encryptNewFolders = encryptNewFolders }
@@ -207,6 +208,7 @@ final class AppModel {
             list.append(Folder(repo: repo, name: name, encrypted: await engine.isEncrypted(repo: repo.name)))
         }
         folders = list.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        conflictCount = (try? await engine.conflicts().count) ?? 0
     }
 
     /// Called when an Extra is switched on or off in Settings.

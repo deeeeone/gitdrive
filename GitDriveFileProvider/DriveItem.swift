@@ -71,6 +71,7 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
             "plain": !encrypted,
             "versions": !record.isDirectory && AppConfig.isOn(.versions),
             "deleted": record.isDirectory && AppConfig.isOn(.recentlyDeleted),
+            "conflict": !record.isDirectory && isConflictCopy(record.filename) && AppConfig.isOn(.conflictViewer),
         ]
     }
 

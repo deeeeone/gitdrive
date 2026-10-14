@@ -44,6 +44,14 @@
 				<key>NSExtensionFileProviderActionName</key>
 				<string>Recently Deleted…</string>
 			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.conflict == YES ).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>com.diwan.gitdrive.action.conflict</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Resolve Conflict…</string>
+			</dict>
 		</array>
 		<key>NSExtensionFileProviderDocumentGroup</key>
 		<string>$(GITDRIVE_APP_GROUP)</string>

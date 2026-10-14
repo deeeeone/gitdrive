@@ -153,3 +153,52 @@ extension SyncEngine {
         try await restore(deleted.version, repo: deleted.repo, path: deleted.path)
     }
 }
+
+/// A conflict copy and the file it was made from.
+public struct Conflict: Identifiable, Sendable, Hashable {
+    public var id: String { copy.id }
+    public let copy: ItemRecord
+    public let original: ItemRecord?
+}
+
+/// Which side of a conflict to keep.
+public enum ConflictChoice: Sendable {
+    /// The conflict copy's contents replace the original, then the copy is deleted.
+    case mine
+    /// The original stays and the copy is deleted.
+    case theirs
+    /// Both stay. The copy is renamed so it no longer looks like a conflict.
+    case both
+}
+
+extension SyncEngine {
+    public func conflicts() throws -> [Conflict] {
+        try store.allItems().filter { !$0.isDirectory && isConflictCopy($0.filename) }.map { copy in
+            Conflict(copy: copy, original: originalPath(ofConflictCopy: copy.path).flatMap { try? store.item(repo: copy.repo, path: $0) })
+        }
+    }
+
+    public func resolve(_ conflict: Conflict, keeping choice: ConflictChoice) async throws {
+        switch choice {
+        case .mine:
+            if let original = conflict.original {
+                let (url, _) = try await download(id: conflict.copy.id)
+                defer { try? FileManager.default.removeItem(at: url) }
+                _ = try await modify(id: original.id, newName: nil, newParentID: nil, contents: url)
+                try await delete(id: conflict.copy.id)
+            } else {
+                // The original is gone, so the copy simply takes its name.
+                let name = originalPath(ofConflictCopy: conflict.copy.filename) ?? conflict.copy.filename
+                _ = try await modify(id: conflict.copy.id, newName: name, newParentID: nil, contents: nil)
+            }
+        case .theirs:
+            try await delete(id: conflict.copy.id)
+        case .both:
+            let base = originalPath(ofConflictCopy: conflict.copy.filename) ?? conflict.copy.filename
+            let ext = (base as NSString).pathExtension
+            let stem = (base as NSString).deletingPathExtension
+            let name = ext.isEmpty ? "\(stem) (my version)" : "\(stem) (my version).\(ext)"
+            _ = try await modify(id: conflict.copy.id, newName: name, newParentID: nil, contents: nil)
+        }
+    }
+}
