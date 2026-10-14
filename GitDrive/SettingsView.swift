@@ -288,12 +288,43 @@ private struct ExtraOptions: View {
             }
             .font(.callout)
             if extra == .passcode { PasscodeOptions() }
+        case .backup:
+            BackupOptions(backups: model.backups)
         case .notes:
             FolderPicker(title: "Notes folders", selection: Binding(get: { AppConfig.notesRepos }, set: { AppConfig.notesRepos = $0 }))
         case .photos:
             FolderPicker(title: "Photo folders", selection: Binding(get: { AppConfig.photoRepos }, set: { AppConfig.photoRepos = $0 }))
         default:
             EmptyView()
+        }
+    }
+}
+
+/// Folders being backed up, with Back Up Now.
+private struct BackupOptions: View {
+    @Bindable var backups: Backups
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(backups.sources) { source in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(source.name)
+                        Text(source.lastRun.map { "Last backup \($0.formatted(.relative(presentation: .named))). " } .map { $0 + (source.lastResult ?? "") } ?? (source.lastResult ?? "Not backed up yet"))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if backups.running == source.id {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Back Up Now") { Task { await backups.run(source.id) } }.disabled(backups.running != nil)
+                    }
+                    Button { backups.remove(source.id) } label: { Image(systemName: "minus.circle") }.buttonStyle(.borderless)
+                }
+            }
+            Button("Add Folder…") { backups.add() }
+            Text("Each folder backs up once a day while GitDrive is running, into a top-level folder named \"Backup of …\". It's encrypted if you've set up encryption.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

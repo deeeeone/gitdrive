@@ -307,6 +307,33 @@ struct SyncEngineTests {
         #expect(try await engine.conflicts().isEmpty)
     }
 
+    @Test func backupsMirrorAFolderAndSkipUnchangedFiles() async throws {
+        let local = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: local.appendingPathComponent("sub"), withIntermediateDirectories: true)
+        try Data("one".utf8).write(to: local.appendingPathComponent("a.txt"))
+        try Data("two".utf8).write(to: local.appendingPathComponent("sub/b.txt"))
+        try Data("x".utf8).write(to: local.appendingPathComponent(".DS_Store"))
+        try await engine.syncAll()
+
+        let first = try await engine.backup(local, into: nil, name: "Docs", encrypt: false)
+        #expect(first.uploaded == 2)
+        #expect(fake.files(repo: first.repo)["sub/b.txt"] == "two")
+        #expect(fake.files(repo: first.repo)[".DS_Store"] == nil)
+
+        let commits = fake.commitCount(repo: first.repo)
+        let again = try await engine.backup(local, into: first.repo, name: "Docs", encrypt: false)
+        #expect(again.unchanged == 2 && again.uploaded == 0)
+        #expect(fake.commitCount(repo: first.repo) == commits)
+
+        try Data("one, edited".utf8).write(to: local.appendingPathComponent("a.txt"))
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: local.appendingPathComponent("a.txt").path)
+        try FileManager.default.removeItem(at: local.appendingPathComponent("sub/b.txt"))
+        let third = try await engine.backup(local, into: first.repo, name: "Docs", encrypt: false)
+        #expect(third.uploaded == 1 && third.deleted == 1)
+        #expect(fake.files(repo: first.repo)["a.txt"] == "one, edited")
+        #expect(fake.files(repo: first.repo)["sub/b.txt"] == nil)
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

@@ -71,6 +71,7 @@ final class AppModel {
     /// encrypt folders; the extension keeps the real index.
     @ObservationIgnored private var engine: SyncEngine?
     @ObservationIgnored private var bridgeToken: Int32 = 0
+    @ObservationIgnored lazy var backups = Backups(model: self)
 
     static let domain = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier("github"), displayName: "GitHub")
     private var manager: NSFileProviderManager? { NSFileProviderManager(for: Self.domain) }
@@ -98,6 +99,7 @@ final class AppModel {
         Task { await start() }
         bridgeToken = Bridge.observe { Task { @MainActor in self.handleRequests() } }
         watchForSleep()
+        Task { @MainActor in _ = self.backups }
         #if DEBUG
         Snapshot.renderIfRequested(model: self)
         #endif
