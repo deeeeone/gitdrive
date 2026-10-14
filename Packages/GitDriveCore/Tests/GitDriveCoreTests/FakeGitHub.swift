@@ -18,6 +18,7 @@ final class FakeGitHub: @unchecked Sendable {
     var commits: [String: Commit] = [:]
     var requests: [String] = []
     var lfsObjects: [String: Data] = [:]
+    var pages: Set<String> = []
     private var counter = 0
 
     func sync<T>(_ body: () throws -> T) rethrows -> T {
@@ -128,6 +129,11 @@ final class FakeGitHub: @unchecked Sendable {
                 }
                 return (200, data)
             }
+            if method == "GET", path == "/user" { return (200, encode(["login": owner])) }
+            if path.hasSuffix("/pages"), parts.count == 4, repos[parts[2]] != nil {
+                pages.insert(parts[2])
+                return (method == "POST" ? 201 : 200, encode(["html_url": "https://\(owner).github.io/\(parts[2])/"]))
+            }
             if method == "POST", path == "/user/repos" {
                 let name = json["name"] as! String
                 let tree = newSHA()
@@ -221,7 +227,7 @@ final class FakeGitHub: @unchecked Sendable {
                 blobs[sha] = data
                 return (201, encode(["sha": sha]))
             case ("POST", "git", "trees"):
-                var flat = trees[json["base_tree"] as! String] ?? [:]
+                var flat = (json["base_tree"] as? String).flatMap { trees[$0] } ?? [:]
                 for change in json["tree"] as! [[String: Any]] {
                     let p = change["path"] as! String
                     if let sha = change["sha"] as? String { flat[p] = sha } else { flat[p] = nil }

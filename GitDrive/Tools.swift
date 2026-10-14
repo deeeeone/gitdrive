@@ -14,6 +14,10 @@ enum Tools {
             showPhotos(model: model)
         case .notes:
             showNotes(model: model)
+        case .publish:
+            ToolWindows.show("Publish", id: "publish-\(request.repo)-\(request.path)", size: CGSize(width: 460, height: 260)) {
+                PublishView(model: model, repo: request.repo, path: request.path)
+            }
         case .tripwire:
             showTripwire(model: model)
         case .conflict:

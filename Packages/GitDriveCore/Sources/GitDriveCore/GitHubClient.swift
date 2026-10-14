@@ -119,6 +119,34 @@ public actor GitHubClient {
         return fresh
     }
 
+    /// A public repo with a first commit, for publishing with GitHub Pages.
+    public func publicRepo(named name: String) async throws -> Repo {
+        let me = try await currentUser().login
+        if let existing: Repo = try? await get("repos/\(me)/\(name)") { return existing }
+        struct Body: Encodable {
+            let name: String
+            let `private` = false
+            let description = "Published with GitDrive"
+            let auto_init = true
+        }
+        return try await send("POST", "user/repos", body: Body(name: name))
+    }
+
+    /// Turns on GitHub Pages for the root of `branch` and returns the site's address.
+    public func enablePages(owner: String, repo: String, branch: String) async throws -> URL {
+        struct Source: Encodable { let branch: String; let path = "/" }
+        struct Body: Encodable { let source: Source }
+        struct Site: Decodable { let html_url: URL? }
+        do {
+            let site: Site = try await send("POST", "repos/\(owner)/\(repo)/pages", body: Body(source: Source(branch: branch)))
+            if let url = site.html_url { return url }
+        } catch let e as GitHubError where e.kind == .server(status: 409) {
+            // Already on.
+        }
+        let site: Site = try await get("repos/\(owner)/\(repo)/pages")
+        return site.html_url ?? URL(string: "https://\(owner).github.io/\(repo)/")!
+    }
+
     public func renameRepo(owner: String, name: String, to newName: String) async throws -> Repo {
         struct Body: Encodable { let name: String }
         return try await send("PATCH", "repos/\(owner)/\(name)", body: Body(name: newName))
@@ -241,8 +269,9 @@ public actor GitHubClient {
         return out.sha
     }
 
-    public func createTree(owner: String, repo: String, base: String, changes: [TreeChange]) async throws -> String {
-        struct Body: Encodable { let base_tree: String; let tree: [TreeChange] }
+    /// Pass a nil `base` to build a tree from scratch, replacing every file.
+    public func createTree(owner: String, repo: String, base: String?, changes: [TreeChange]) async throws -> String {
+        struct Body: Encodable { let base_tree: String?; let tree: [TreeChange] }
         struct Out: Decodable { let sha: String }
         let out: Out = try await send("POST", "repos/\(owner)/\(repo)/git/trees", body: Body(base_tree: base, tree: changes))
         return out.sha

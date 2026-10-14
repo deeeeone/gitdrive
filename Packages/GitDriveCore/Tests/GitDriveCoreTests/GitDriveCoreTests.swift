@@ -377,6 +377,18 @@ struct SyncEngineTests {
         #expect(report.damaged.map(\.lastPathComponent) == ["rot.txt"])
     }
 
+    @Test func foldersPublishToAPublicSite() async throws {
+        fake.seed(repo: "drive-docs", files: ["site/photo.jpg": "img", "site/about.txt": "hi", "private.txt": "no"])
+        try await engine.syncAll()
+        let url = try await engine.publish(repo: "drive-docs", path: "site", as: "my-site")
+        #expect(url.absoluteString == "https://octo.github.io/my-site/")
+        let files = fake.files(repo: "my-site")
+        #expect(files["photo.jpg"] == "img" && files["about.txt"] == "hi")
+        #expect(files["private.txt"] == nil)
+        #expect(files["index.html"]?.contains("<img src=\"photo.jpg\"") == true)
+        #expect(fake.sync { fake.pages.contains("my-site") })
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

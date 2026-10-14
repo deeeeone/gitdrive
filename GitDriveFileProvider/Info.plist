@@ -52,6 +52,14 @@
 				<key>NSExtensionFileProviderActionName</key>
 				<string>Resolve Conflict…</string>
 			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.publish == YES ).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>com.diwan.gitdrive.action.publish</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Publish as Website…</string>
+			</dict>
 		</array>
 		<key>NSExtensionFileProviderDocumentGroup</key>
 		<string>$(GITDRIVE_APP_GROUP)</string>
