@@ -364,6 +364,19 @@ struct SyncEngineTests {
         #expect(fake.files(repo: "drive-docs")["a.txt"] == "good")
     }
 
+    @Test func bitRotCheckFindsChangedBytes() async throws {
+        fake.seed(repo: "drive-docs", files: ["ok.txt": "fine", "sub/rot.txt": "original"])
+        try await engine.syncAll()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("docs/sub"), withIntermediateDirectories: true)
+        try Data("fine".utf8).write(to: root.appendingPathComponent("docs/ok.txt"))
+        try Data("origimal".utf8).write(to: root.appendingPathComponent("docs/sub/rot.txt"))
+
+        let report = await engine.checkForBitRot(root: root, requireDownloaded: false)
+        #expect(report.checked == 2)
+        #expect(report.damaged.map(\.lastPathComponent) == ["rot.txt"])
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

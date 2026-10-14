@@ -68,6 +68,17 @@ enum Snapshot {
         }
     }
 
+    /// GITDRIVE_BITROT=1 runs the bit-rot check, prints the report and quits.
+    static func bitRotIfAsked(model: AppModel) {
+        guard ProcessInfo.processInfo.environment["GITDRIVE_BITROT"] != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            let report = await model.checkForBitRot()
+            print("checked", report.checked, "skipped", report.skipped, "damaged", report.damaged.map(\.lastPathComponent))
+            exit(0)
+        }
+    }
+
     static func renderIfRequested(model: AppModel) {
         guard let mode = ProcessInfo.processInfo.environment["GITDRIVE_SNAPSHOT"] else { return }
         Task { @MainActor in

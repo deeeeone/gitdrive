@@ -103,6 +103,7 @@ final class AppModel {
         #if DEBUG
         Snapshot.renderIfRequested(model: self)
         Snapshot.rollBackIfAsked(model: self)
+        Snapshot.bitRotIfAsked(model: self)
         #endif
     }
 
@@ -162,6 +163,7 @@ final class AppModel {
             if includeSizes {
                 canDeleteRepos = try await client.tokenScopes().map { $0.contains("delete_repo") }
                 await loadFolders(client: client)
+                await runMonthlyBitRotCheck()
             }
             if case let .signedIn(login) = account, login.isEmpty {
                 account = .signedIn(login: try await client.currentUser().login)
@@ -229,6 +231,29 @@ final class AppModel {
             if extra == .search, case .signedIn = account { try? await addDomain() }
             try? await manager?.signalEnumerator(for: .workingSet)
         }
+    }
+
+    // MARK: Bit-rot
+
+    /// Hashes every downloaded file and compares it with git's record.
+    func checkForBitRot() async -> BitRotReport {
+        guard let root = try? await manager?.getUserVisibleURL(for: .rootContainer), let engine = try? await readyEngine() else {
+            return BitRotReport()
+        }
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        try? await engine.syncAll()
+        let report = await engine.checkForBitRot(root: root)
+        UserDefaults.standard.set(Date(), forKey: "lastBitRotCheck")
+        return report
+    }
+
+    private func runMonthlyBitRotCheck() async {
+        guard AppConfig.isOn(.bitRot) else { return }
+        let last = UserDefaults.standard.object(forKey: "lastBitRotCheck") as? Date ?? .distantPast
+        guard Date().timeIntervalSince(last) > 30 * 86400 else { return }
+        let report = await checkForBitRot()
+        if !report.damaged.isEmpty { Tools.showBitRot(model: self) }
     }
 
     // MARK: Locking

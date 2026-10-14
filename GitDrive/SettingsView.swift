@@ -288,6 +288,12 @@ private struct ExtraOptions: View {
             }
             .font(.callout)
             if extra == .passcode { PasscodeOptions() }
+        case .bitRot:
+            Button("Open Bit-rot Check…") { Tools.showBitRot(model: model) }
+        case .duplicates:
+            Button("Find Duplicates…") { Tools.showDuplicates(model: model) }
+        case .recentlyDeleted:
+            Button("Open Recently Deleted…") { Tools.showRecentlyDeleted(model: model) }
         case .backup:
             BackupOptions(backups: model.backups)
         case .notes:
