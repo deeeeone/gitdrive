@@ -54,6 +54,9 @@ final class AppModel {
 
     init() {
         Task { await start() }
+        #if DEBUG
+        Snapshot.renderIfRequested(model: self)
+        #endif
     }
 
     // MARK: Lifecycle
@@ -251,6 +254,7 @@ final class AppModel {
 extension Int {
     /// Formats a size given in KB, the unit GitHub reports repo sizes in.
     var kilobytesFormatted: String {
-        ByteCountFormatter.string(fromByteCount: Int64(self) * 1024, countStyle: .file)
+        if self == 0 { return "Empty" }
+        return ByteCountFormatter.string(fromByteCount: Int64(self) * 1024, countStyle: .file)
     }
 }

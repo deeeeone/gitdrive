@@ -182,7 +182,12 @@ private struct MenuButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .frame(width: 20, alignment: .center)
+                    .foregroundStyle(.secondary)
+                Text(title)
+            }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
                 .padding(.horizontal, 6)
