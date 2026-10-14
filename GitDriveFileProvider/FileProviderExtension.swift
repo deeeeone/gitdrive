@@ -9,6 +9,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
     private let manager: NSFileProviderManager?
     private let lock = NSLock()
     private var cachedEngine: SyncEngine?
+    private let tripwire = Tripwire()
     let log = Logger(subsystem: "com.diwan.gitdrive", category: "extension")
 
     required init(domain: NSFileProviderDomain) {
@@ -158,9 +159,17 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
         let newParent = changedFields.contains(.parentItemIdentifier) ? item.parentItemIdentifier.storeID : nil
         let contents = changedFields.contains(.contents) ? newContents : nil
         let modified = changedFields.contains(.contentModificationDate) ? (item.contentModificationDate ?? nil) : nil
+        let filename = item.filename
         Task {
             do {
                 let engine = try self.engine()
+                if let contents, self.holdForTripwire(contents, name: filename) {
+                    // Keep GitHub's copy and have macOS put it back over the local file.
+                    guard let existing = try engine.store.item(id: id) else { throw NSFileProviderError(.noSuchItem) }
+                    done.value(DriveItem(existing), [], true, nil)
+                    progress.completedUnitCount = 1
+                    return
+                }
                 let record: ItemRecord
                 if newName == nil, newParent == nil, contents == nil {
                     // Only fields GitDrive doesn't store changed, such as tags or last-used date.
@@ -195,6 +204,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
         let done = Unchecked(completionHandler)
         Task {
             do {
+                // While the tripwire holds, deletes wait so nothing can be wiped out.
+                if AppConfig.isOn(.tripwire), AppConfig.tripwire != nil { throw NSFileProviderError(.serverUnreachable) }
                 try await self.engine().delete(id: identifier.rawValue)
                 done.value(nil)
             } catch {
@@ -204,6 +215,17 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
             progress.completedUnitCount = 1
         }
         return progress
+    }
+
+    /// True while the tripwire is set, or when this overwrite sets it.
+    private func holdForTripwire(_ file: URL, name: String) -> Bool {
+        guard AppConfig.isOn(.tripwire) else { return false }
+        if AppConfig.tripwire != nil { return true }
+        guard tripwire.record(file, name: name) else { return false }
+        log.error("Tripwire: \(self.tripwire.recentCount) files turned into random data, pausing uploads")
+        AppConfig.tripwire = TripwireState(trippedAt: Date(), count: tripwire.recentCount, examples: tripwire.recentNames)
+        Bridge.send(ToolRequest(kind: .tripwire, repo: "", path: ""))
+        return true
     }
 
     private static func emptyFile() throws -> URL {

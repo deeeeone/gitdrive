@@ -102,6 +102,7 @@ final class AppModel {
         Task { @MainActor in _ = self.backups }
         #if DEBUG
         Snapshot.renderIfRequested(model: self)
+        Snapshot.rollBackIfAsked(model: self)
         #endif
     }
 
@@ -149,6 +150,7 @@ final class AppModel {
     func refresh(includeSizes: Bool = true) async {
         guard case .signedIn = account, status != .paused, let client else { return }
         if access != AppConfig.vaultAccess { access = AppConfig.vaultAccess }
+        if AppConfig.tripwire != nil { status = .error("Uploads paused: possible ransomware") }
         status = .syncing
         do {
             try await manager?.signalEnumerator(for: .workingSet)

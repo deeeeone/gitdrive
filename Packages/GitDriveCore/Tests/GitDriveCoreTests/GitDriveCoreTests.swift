@@ -334,6 +334,36 @@ struct SyncEngineTests {
         #expect(fake.files(repo: first.repo)["sub/b.txt"] == nil)
     }
 
+    @Test func tripwireFiresOnRandomDataOnly() throws {
+        let wire = Tripwire(threshold: 3, window: 600)
+        var random = Data(count: 16_384)
+        random.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!) }
+        let encrypted = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try random.write(to: encrypted)
+        let text = try temp(String(repeating: "Dear diary, today was fine. ", count: 600))
+
+        #expect(Tripwire.looksEncrypted(encrypted, name: "report.docx.locked"))
+        #expect(!Tripwire.looksEncrypted(text, name: "diary.txt"))
+        #expect(!Tripwire.looksEncrypted(encrypted, name: "holiday.jpg"))
+        #expect(!wire.record(encrypted, name: "a.txt"))
+        #expect(!wire.record(text, name: "b.txt"))
+        #expect(!wire.record(encrypted, name: "c.txt"))
+        #expect(wire.record(encrypted, name: "d.txt"))
+    }
+
+    @Test func rollBackRestoresEarlierFiles() async throws {
+        fake.seed(repo: "drive-docs", files: ["a.txt": "good"])
+        try await engine.syncAll()
+        let checkpoint = Date()
+        try await Task.sleep(for: .milliseconds(1100))
+        _ = try await engine.modify(id: try id("drive-docs", "a.txt"), newName: nil, newParentID: nil, contents: temp("encrypted junk"))
+        #expect(fake.files(repo: "drive-docs")["a.txt"] == "encrypted junk")
+
+        let changed = try await engine.rollBack(to: checkpoint)
+        #expect(changed == ["drive-docs"])
+        #expect(fake.files(repo: "drive-docs")["a.txt"] == "good")
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

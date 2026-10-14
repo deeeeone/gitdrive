@@ -4,7 +4,11 @@ import Foundation
 
 /// In-memory stand-in for the GitHub endpoints GitDrive calls. Trees are stored flat (path to blob SHA).
 final class FakeGitHub: @unchecked Sendable {
-    struct Commit { let tree: String; let parents: [String] }
+    struct Commit {
+        let tree: String
+        let parents: [String]
+        var date = Date()
+    }
 
     private let lock = NSLock()
     var owner = "octo"
@@ -143,15 +147,18 @@ final class FakeGitHub: @unchecked Sendable {
             let rest = Array(parts.dropFirst(3))
             if method == "GET", parts.count == 3 { return (200, encode(repoJSON(parts[2]))) }
             if method == "GET", rest == ["commits"] {
-                let filter = req.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first { $0.name == "path" }?.value
+                let query = req.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems ?? []
+                let filter = query.first { $0.name == "path" }?.value
+                let until = query.first { $0.name == "until" }?.value.flatMap { ISO8601DateFormatter().date(from: $0) }
                 var list: [[String: Any]] = []
                 var cur: String? = head
                 while let c = cur, let commit = commits[c] {
                     let parent = commit.parents.first
                     let mine = trees[commit.tree]?[filter ?? ""]
                     let before = parent.flatMap { commits[$0] }.flatMap { trees[$0.tree]?[filter ?? ""] }
-                    if filter == nil || mine != before {
-                        list.append(["sha": c, "commit": ["message": "m", "committer": ["date": "2026-01-02T03:04:05Z"]], "parents": commit.parents.map { ["sha": $0] }])
+                    if (filter == nil || mine != before), until.map({ commit.date.timeIntervalSince1970.rounded(.down) <= $0.timeIntervalSince1970 }) ?? true {
+                        let date = ISO8601DateFormatter().string(from: commit.date)
+                        list.append(["sha": c, "commit": ["message": "m", "committer": ["date": date]], "parents": commit.parents.map { ["sha": $0] }])
                     }
                     cur = parent
                 }

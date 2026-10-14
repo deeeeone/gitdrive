@@ -57,6 +57,10 @@ struct MenuView: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 2) {
+            if AppConfig.tripwire != nil {
+                MenuButton("Uploads paused: possible ransomware", symbol: "exclamationmark.octagon.fill") { Tools.showTripwire(model: model) }
+                    .foregroundStyle(.red)
+            }
             MenuButton("Open in Finder", symbol: "folder") { Task { await model.openInFinder() } }
             MenuButton("Check for Changes", symbol: "arrow.clockwise") { Task { await model.refresh() } }
             MenuButton("Free Up Space", symbol: "icloud.and.arrow.up") { Task { await model.freeUpSpace() } }

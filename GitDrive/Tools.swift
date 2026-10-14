@@ -14,12 +14,20 @@ enum Tools {
             showPhotos(model: model)
         case .notes:
             showNotes(model: model)
+        case .tripwire:
+            showTripwire(model: model)
         case .conflict:
             showConflicts(model: model, focus: request.path)
         case .recentlyDeleted:
             showRecentlyDeleted(model: model, repo: request.repo.isEmpty ? nil : request.repo)
         default:
             break
+        }
+    }
+
+    static func showTripwire(model: AppModel) {
+        ToolWindows.show("Syncing Paused", id: "tripwire", size: CGSize(width: 480, height: 300)) {
+            TripwireView(model: model) { ToolWindows.close("tripwire") }
         }
     }
 

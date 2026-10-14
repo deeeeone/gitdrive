@@ -17,7 +17,8 @@ enum Snapshot {
         for pair in spec.split(separator: ",") {
             let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
             guard parts.count == 2 else { continue }
-            if parts[1].hasPrefix("@") { defaults.set(parts[1].dropFirst().split(separator: ";").map(String.init), forKey: parts[0]) }
+            if parts[1].isEmpty { defaults.removeObject(forKey: parts[0]) }
+            else if parts[1].hasPrefix("@") { defaults.set(parts[1].dropFirst().split(separator: ";").map(String.init), forKey: parts[0]) }
             else if let int = Int(parts[1]) { defaults.set(int, forKey: parts[0]) }
             else if let bool = Bool(parts[1]) { defaults.set(bool, forKey: parts[0]) }
             else { defaults.set(parts[1], forKey: parts[0]) }
@@ -46,6 +47,25 @@ enum Snapshot {
         guard parts.count == 3, let kind = ToolRequest.Kind(rawValue: parts[0]) else { exit(1) }
         Bridge.send(ToolRequest(kind: kind, repo: parts[1], path: parts[2]))
         exit(0)
+    }
+
+    /// GITDRIVE_ROLLBACK="drive-repo|minutes" rolls one repo back, clears the tripwire and quits.
+    static func rollBackIfAsked(model: AppModel) {
+        guard let spec = ProcessInfo.processInfo.environment["GITDRIVE_ROLLBACK"] else { return }
+        let parts = spec.split(separator: "|").map(String.init)
+        guard parts.count == 2, let minutes = Double(parts[1]) else { exit(1) }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            do {
+                let changed = try await model.readyEngine().rollBack(to: Date().addingTimeInterval(-minutes * 60), only: [parts[0]])
+                AppConfig.tripwire = nil
+                print("rolled back", changed)
+                exit(0)
+            } catch {
+                print("error", error)
+                exit(1)
+            }
+        }
     }
 
     static func renderIfRequested(model: AppModel) {
