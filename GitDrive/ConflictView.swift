@@ -13,7 +13,7 @@ struct ConflictView: View {
     @State private var message: String?
 
     var body: some View {
-        NavigationSplitView {
+        HSplitView {
             List(conflicts, selection: $selection) { conflict in
                 VStack(alignment: .leading) {
                     Text(conflict.original?.filename ?? conflict.copy.filename)
@@ -21,35 +21,39 @@ struct ConflictView: View {
                 }
                 .tag(conflict)
             }
+            .listStyle(.sidebar)
             .overlay { if conflicts.isEmpty { ContentUnavailableView("No conflicts", systemImage: "checkmark.circle") } }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220)
-        } detail: {
-            if let selection {
-                VStack(spacing: 10) {
-                    if isText {
-                        HStack(alignment: .top, spacing: 1) {
-                            column("On GitHub (theirs)", theirs, changed: changed(theirs, against: mine), tint: .red)
-                            column("This Mac (mine)", mine, changed: changed(mine, against: theirs), tint: .green)
+            .frame(minWidth: 180, idealWidth: 220, maxWidth: 320)
+
+            Group {
+                if let selection {
+                    VStack(spacing: 10) {
+                        if isText {
+                            HStack(alignment: .top, spacing: 1) {
+                                column("On GitHub (theirs)", theirs, changed: changed(theirs, against: mine), tint: .red)
+                                column("This Mac (mine)", mine, changed: changed(mine, against: theirs), tint: .green)
+                            }
+                        } else {
+                            ContentUnavailableView(
+                                "Can't compare this file", systemImage: "doc",
+                                description: Text("Open both from Finder to compare them, then choose which to keep.")
+                            )
                         }
-                    } else {
-                        ContentUnavailableView(
-                            "Can't compare this file", systemImage: "doc",
-                            description: Text("Open both from Finder to compare them, then choose which to keep.")
-                        )
+                        HStack {
+                            if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            Button("Keep Both") { Task { await resolve(selection, .both) } }
+                            Button("Keep Theirs") { Task { await resolve(selection, .theirs) } }
+                            Button("Keep Mine") { Task { await resolve(selection, .mine) } }.buttonStyle(.borderedProminent)
+                        }
                     }
-                    HStack {
-                        if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
-                        Spacer()
-                        Button("Keep Both") { Task { await resolve(selection, .both) } }
-                        Button("Keep Theirs") { Task { await resolve(selection, .theirs) } }
-                        Button("Keep Mine") { Task { await resolve(selection, .mine) } }.buttonStyle(.borderedProminent)
-                    }
+                    .padding()
+                    .task(id: selection) { await loadSides(selection) }
+                } else {
+                    Text("Choose a conflict").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding()
-                .task(id: selection) { await loadSides(selection) }
-            } else {
-                Text("Choose a conflict").foregroundStyle(.secondary)
             }
+            .frame(minWidth: 480)
         }
         .task { await load() }
     }
