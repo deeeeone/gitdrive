@@ -3,7 +3,7 @@ import GitDriveCore
 import UniformTypeIdentifiers
 
 /// Finder's view of one `ItemRecord`. A nil record is the drive's root.
-final class DriveItem: NSObject, NSFileProviderItem, Sendable {
+final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecorating, Sendable {
     let record: ItemRecord?
 
     init(_ record: ItemRecord?) {
@@ -50,10 +50,22 @@ final class DriveItem: NSObject, NSFileProviderItem, Sendable {
 
     var itemVersion: NSFileProviderItemVersion {
         let content = record?.sha ?? "folder"
-        let metadata = record.map { "\($0.repo)/\($0.path)" } ?? "root"
+        // Decorations are part of the metadata version so Finder refreshes the badge when it changes.
+        let metadata = record.map { "\($0.repo)/\($0.path)" + (decorations == nil ? "" : "#locked") } ?? "root"
         return NSFileProviderItemVersion(contentVersion: Data(content.utf8), metadataVersion: Data(metadata.utf8))
     }
 
     var contentModificationDate: Date? { record?.modified }
+
+    /// Encrypted top-level folders get a lock badge. Only encrypted repos carry a display name.
+    var decorations: [NSFileProviderItemDecorationIdentifier]? {
+        guard let record, record.path.isEmpty, record.displayName != nil else { return nil }
+        return [Self.encryptedDecoration]
+    }
+
+    /// Must match the Identifier in NSFileProviderDecorations in the extension's Info.plist.
+    static let encryptedDecoration = NSFileProviderItemDecorationIdentifier(
+        rawValue: (Bundle.main.bundleIdentifier ?? "com.diwan.gitdrive.FileProvider") + ".encrypted"
+    )
     var creationDate: Date? { record?.modified }
 }

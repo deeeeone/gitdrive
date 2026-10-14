@@ -79,6 +79,11 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FileProviderExtension
           NSExtensionFileProviderDocumentGroup: $(GITDRIVE_APP_GROUP)
           NSExtensionFileProviderSupportsEnumeration: true
+          NSFileProviderDecorations:
+            - Identifier: $(PRODUCT_BUNDLE_IDENTIFIER).encrypted
+              BadgeImageType: com.apple.icon-decoration.badge.locked
+              Category: Badge
+              Label: Encrypted
     entitlements:
       path: GitDriveFileProvider/GitDriveFileProvider.entitlements
       properties:
