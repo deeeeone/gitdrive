@@ -288,6 +288,9 @@ private struct ExtraOptions: View {
             }
             .font(.callout)
             if extra == .passcode { PasscodeOptions() }
+        case .codespaces:
+            Text("Opens the folder's repo in a new codespace. Free accounts include 120 core hours a month. For quick edits without a codespace, press . on the repo's GitHub page to open github.dev.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         case .cloudRun:
             Text("Needs a token with the workflow scope. Private repos get 2,000 free Actions minutes a month.")
                 .font(.caption).foregroundStyle(.secondary)

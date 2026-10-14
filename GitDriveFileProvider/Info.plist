@@ -76,6 +76,14 @@
 				<key>NSExtensionFileProviderActionName</key>
 				<string>Convert to PDF in the Cloud</string>
 			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.codespaces == YES ).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>com.diwan.gitdrive.action.codespaces</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Open in Codespaces</string>
+			</dict>
 		</array>
 		<key>NSExtensionFileProviderDocumentGroup</key>
 		<string>$(GITDRIVE_APP_GROUP)</string>

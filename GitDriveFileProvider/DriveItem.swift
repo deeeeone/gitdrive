@@ -74,6 +74,7 @@ final class DriveItem: NSObject, NSFileProviderItem, NSFileProviderItemDecoratin
             "publish": record.isDirectory && !encrypted && AppConfig.isOn(.publish),
             "cloudVideo": !record.isDirectory && !encrypted && AppConfig.isOn(.cloudRun) && CloudTask.accepts(record.filename, task: .compressVideo),
             "cloudPDF": !record.isDirectory && !encrypted && AppConfig.isOn(.cloudRun) && CloudTask.accepts(record.filename, task: .convertPDF),
+            "codespaces": record.isDirectory && !encrypted && AppConfig.isOn(.codespaces),
             "conflict": !record.isDirectory && isConflictCopy(record.filename) && AppConfig.isOn(.conflictViewer),
         ]
     }

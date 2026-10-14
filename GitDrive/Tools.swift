@@ -23,6 +23,13 @@ enum Tools {
             ToolWindows.show("Run in the Cloud", id: "cloud-\(request.repo)-\(request.path)", size: CGSize(width: 420, height: 200)) {
                 CloudRunView(model: model, repo: request.repo, path: request.path, task: task)
             }
+        case .codespaces:
+            Task {
+                // Codespaces open a whole repo; a subfolder opens its top-level folder's repo.
+                guard let rec = try? await model.readyEngine().store.repo(named: request.repo),
+                      let url = URL(string: "https://codespaces.new/\(rec.owner)/\(rec.name)?quickstart=1") else { return }
+                NSWorkspace.shared.open(url)
+            }
         case .tripwire:
             showTripwire(model: model)
         case .conflict:

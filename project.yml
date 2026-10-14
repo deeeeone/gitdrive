@@ -100,6 +100,9 @@ targets:
             - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.convertPDF
               NSExtensionFileProviderActionName: Convert to PDF in the Cloud
               NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.cloudPDF == YES ).@count == 1
+            - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.codespaces
+              NSExtensionFileProviderActionName: Open in Codespaces
+              NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.codespaces == YES ).@count == 1
           NSFileProviderDecorations:
             - Identifier: $(PRODUCT_BUNDLE_IDENTIFIER).encrypted
               BadgeImageType: com.apple.icon-decoration.badge.locked
