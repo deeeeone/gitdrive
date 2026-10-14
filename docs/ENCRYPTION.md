@@ -49,6 +49,14 @@ Packs that no file uses any more are deleted in the next commit. Old versions st
 
 GitDrive creates a new encrypted repo, copies every file into it (following Git LFS pointers), and then **deletes the readable repo**, including its history. Deleting is the only way to remove readable copies from GitHub, so this needs a token with the `delete_repo` scope. If the delete fails, GitDrive stops and tells you, and both repos stay until you delete the old one yourself.
 
+## Decrypting a folder
+
+**Settings → Encryption → Decrypt…** does the reverse: it creates a normal repo named after the folder, copies every file into it (using Git LFS for large files if that's on), and then deletes the encrypted repo. GitHub can read the folder again afterwards. Characters GitHub doesn't allow in repo names, such as spaces, become `-` in the repo name. Like encrypting, it needs the `delete_repo` scope.
+
+## In Finder
+
+Encrypted top-level folders show a lock badge next to their name. A folder whose key isn't on this Mac shows up as "Locked folder" with nothing inside.
+
 ## Why these choices
 
 | Choice | Reason |

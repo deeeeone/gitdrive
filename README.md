@@ -132,7 +132,8 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] Moving folders between top-level folders
 - [x] End-to-end encryption with hidden file structure
 - [ ] Shared folders (repos you collaborate on)
-- [ ] Decrypting a folder back to a readable repo
+- [x] Decrypting a folder back to a readable repo
+- [x] Lock badge on encrypted folders in Finder
 - [ ] Signed and notarized release builds
 
 ## FAQ
