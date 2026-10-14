@@ -29,7 +29,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
             let engine = SyncEngine(
                 client: GitHubClient(token: token),
                 store: try ItemStore(url: db),
-                repoDeletion: { AppConfig.repoDeletion }
+                repoDeletion: { AppConfig.repoDeletion },
+                lfsThreshold: { AppConfig.lfsThresholdBytes }
             )
             cachedEngine = engine
             return engine

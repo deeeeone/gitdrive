@@ -44,6 +44,23 @@ private struct GeneralTab: View {
                     ? "Deleting a repo is permanent, including its history. Finder asks before deleting."
                     : "Archived repos disappear from the drive but stay on GitHub, read-only. Unarchive one on GitHub to bring it back.")
             }
+            Section {
+                Toggle("Store large files with Git LFS", isOn: Binding(
+                    get: { model.lfsEnabled },
+                    set: { model.lfsEnabled = $0 }
+                ))
+                if model.lfsEnabled {
+                    Stepper(value: Binding(get: { model.lfsThresholdMB }, set: { model.lfsThresholdMB = $0 }), in: 1...99, step: 5) {
+                        LabeledContent("Files larger than", value: "\(model.lfsThresholdMB) MB")
+                    }
+                }
+            } header: {
+                Text("Large files")
+            } footer: {
+                Text(model.lfsEnabled
+                    ? "Up to 2 GB per file. GitHub Free includes 10 GiB of LFS storage and 10 GiB of downloads a month, and every file you open counts as a download. Encrypted folders don't need LFS."
+                    : "Without LFS, files over 100 MB can't be stored.")
+            }
             Section("Account") {
                 if case let .signedIn(login) = model.account {
                     LabeledContent("Signed in as", value: login.isEmpty ? "Offline" : "@\(login)")

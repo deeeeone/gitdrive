@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import GitDriveCore
 import SwiftUI
 
 /// Shows the live menu panel in a plain window so it can be captured for the README.
@@ -8,6 +9,21 @@ import SwiftUI
 @MainActor
 enum Snapshot {
     private static var window: NSWindow?
+
+    /// GITDRIVE_DEFAULTS="lfsEnabled=true,lfsThresholdMB=1" writes shared settings and quits.
+    /// The App Group container is closed to other processes, so this is the only way to script them.
+    static func applyDefaultsIfRequested() {
+        guard let spec = ProcessInfo.processInfo.environment["GITDRIVE_DEFAULTS"], let defaults = AppConfig.sharedDefaults else { return }
+        for pair in spec.split(separator: ",") {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            if let int = Int(parts[1]) { defaults.set(int, forKey: parts[0]) }
+            else if let bool = Bool(parts[1]) { defaults.set(bool, forKey: parts[0]) }
+            else { defaults.set(parts[1], forKey: parts[0]) }
+        }
+        defaults.synchronize()
+        exit(0)
+    }
 
     static func renderIfRequested(model: AppModel) {
         guard let mode = ProcessInfo.processInfo.environment["GITDRIVE_SNAPSHOT"] else { return }

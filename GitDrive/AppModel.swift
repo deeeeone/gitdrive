@@ -34,6 +34,12 @@ final class AppModel {
     var repoDeletion = AppConfig.repoDeletion {
         didSet { AppConfig.repoDeletion = repoDeletion }
     }
+    var lfsEnabled = AppConfig.lfsEnabled {
+        didSet { AppConfig.lfsEnabled = lfsEnabled }
+    }
+    var lfsThresholdMB = AppConfig.lfsThresholdMB {
+        didSet { AppConfig.lfsThresholdMB = lfsThresholdMB }
+    }
 
     @ObservationIgnored private let tokens = TokenStore()
     @ObservationIgnored private var pollTask: Task<Void, Never>?
@@ -58,6 +64,9 @@ final class AppModel {
     }
 
     init() {
+        #if DEBUG
+        Snapshot.applyDefaultsIfRequested()
+        #endif
         Task { await start() }
         #if DEBUG
         Snapshot.renderIfRequested(model: self)
