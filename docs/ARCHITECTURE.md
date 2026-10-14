@@ -44,6 +44,10 @@ When **Large files** is on in Settings, files bigger than the chosen threshold (
 
 LFS objects are tracked by the pointer blob's SHA, so they follow renames, moves and conflict copies without uploading again.
 
+## Encrypted folders
+
+Encrypted repos look different on GitHub but use the same engine. On refresh, a repo with `.gitdrive/vault.json` is unlocked with the folder key, and its sealed index is turned into the same tree-entry shape a plain repo produces, so `apply`, change enumeration and conflict handling don't change. Writes stage sealed chunks locally and commit packs plus a new index. Details are in [ENCRYPTION.md](ENCRYPTION.md).
+
 ## Identity and versions
 
 Git has no stable file IDs, so the index gives every item a random ID and keeps it across renames and moves. A rename or move is sent to the sync engine with a *claim*: "path X now belongs to item Y". When the new tree comes back, claimed paths keep their old IDs and everything else is matched by path.

@@ -54,6 +54,8 @@ Debug builds accept `GITDRIVE_DEFAULTS` to write shared settings, which are othe
 GITDRIVE_DEFAULTS="lfsEnabled=true,lfsThresholdMB=1" build/Build/Products/Debug/GitDrive.app/Contents/MacOS/GitDrive
 ```
 
+`GITDRIVE_SETUP_KEY=1` does the same as **Set Up Encryption** and prints the key fingerprint. It never replaces an existing key.
+
 ## Code style
 
 - Swift 6 with strict concurrency. No `@unchecked Sendable` unless a system type forces it, with a comment saying why.

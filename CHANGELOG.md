@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format is based on 
 
 - Optional Git LFS for large files, with a size threshold in Settings. Off by default.
 
+- End-to-end encrypted folders, off by default. Post-quantum X-Wing (ML-KEM-768 + X25519) keys in iCloud Keychain, deduplicated and LZFSE-compressed chunks in Padmé-padded packs, and a sealed index, so GitHub can't see names, layout, file count or sizes. Encrypt new folders automatically or convert existing ones. Needs macOS 26.
+
 ### Changed
 
 - Deleting a top-level folder now deletes its GitHub repo. Settings can switch this back to archiving. Sign-in asks for the `delete_repo` scope.

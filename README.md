@@ -37,6 +37,7 @@
 - **Files on demand.** Everything is listed right away. A file downloads only when you open it.
 - **Frees up space.** Right-click and choose Remove Download, or use Free Up Space in the menu bar. macOS can also remove downloads on its own when the disk is low.
 - **Private by default.** Every top-level folder is its own private GitHub repo named `drive-<folder>`.
+- **Optional end-to-end encryption.** Post-quantum (ML-KEM-768 + X25519) with deduplication and compression. GitHub sees random data: no names, no folder layout, no file sizes. Needs macOS 26. See [docs/ENCRYPTION.md](docs/ENCRYPTION.md).
 - **Real git history.** Each save is a commit, so every old version stays recoverable on GitHub.
 - **Large files with Git LFS.** Optional: files over a size you choose go to Git LFS, up to 2 GB each.
 - **Keeps file dates.** Modification dates are saved in the repo, so every Mac shows the same dates.
@@ -115,7 +116,8 @@ Please read GitHub's [Acceptable Use Policies](https://docs.github.com/en/site-p
 ## Privacy and security
 
 - Your GitHub token is stored only in the macOS Keychain, shared between the app and its extension.
-- Repos GitDrive creates are always private.
+- Repos GitDrive creates are always private. Turn on encryption and GitHub can't read them at all.
+- Your encryption key stays in iCloud Keychain. Each encrypted repo holds only the public key.
 - Deleting a top-level folder deletes its repo, after Finder asks. Choose **Settings → General → Top-level folders → Archives its GitHub repo** if you'd rather keep a read-only copy on GitHub.
 - Deleting anything else is a commit, so it can be recovered from the repo's history.
 - The only force-push is Compact History, which asks first.
@@ -128,7 +130,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] Git LFS for files over 100 MB
 - [x] Modification dates stored in the repo
 - [x] Moving folders between top-level folders
+- [x] End-to-end encryption with hidden file structure
 - [ ] Shared folders (repos you collaborate on)
+- [ ] Decrypting a folder back to a readable repo
 - [ ] Signed and notarized release builds
 
 ## FAQ
