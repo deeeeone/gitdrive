@@ -40,15 +40,24 @@ public enum Edit: Sendable, Equatable {
 public actor SyncEngine {
     public nonisolated let client: GitHubClient
     public nonisolated let store: ItemStore
-    private let log = Logger(subsystem: "com.diwan.gitdrive", category: "sync")
-    private let locks = KeyedLock()
-    private var lastRepoList: Date?
-    private var emptyBlobs: [String: String] = [:]
+    let log = Logger(subsystem: "com.diwan.gitdrive", category: "sync")
+    let locks = KeyedLock()
+    var lastRepoList: Date?
+    var emptyBlobs: [String: String] = [:]
     /// Parsed meta files by blob SHA. Blobs never change, so entries never go stale.
-    private var metaCache: [String: DriveMeta] = [:]
+    var metaCache: [String: DriveMeta] = [:]
 
-    private let repoDeletion: @Sendable () -> RepoDeletion
-    private let lfsThreshold: @Sendable () -> Int64?
+    let repoDeletion: @Sendable () -> RepoDeletion
+    let lfsThreshold: @Sendable () -> Int64?
+    let identity: @Sendable () -> VaultIdentity?
+    let encryptNewFolders: @Sendable () -> Bool
+
+    // Encrypted folders. See SyncEngine+Vault.swift.
+    var vaults: [String: VaultState] = [:]
+    var lockedRepos: Set<String> = []
+    var stagedFiles: [String: [String: StagedFile]] = [:]
+    var stagedChunks: [String: [String: URL]] = [:]
+    var packCache = PackCache()
 
     /// Settings are closures read at use time, so changes apply right away.
     /// `lfsThreshold` is the size in bytes above which files go to Git LFS, or nil to never use LFS.
@@ -56,12 +65,16 @@ public actor SyncEngine {
         client: GitHubClient,
         store: ItemStore,
         repoDeletion: @escaping @Sendable () -> RepoDeletion = { .archive },
-        lfsThreshold: @escaping @Sendable () -> Int64? = { nil }
+        lfsThreshold: @escaping @Sendable () -> Int64? = { nil },
+        identity: @escaping @Sendable () -> VaultIdentity? = { nil },
+        encryptNewFolders: @escaping @Sendable () -> Bool = { false }
     ) {
         self.client = client
         self.store = store
         self.repoDeletion = repoDeletion
         self.lfsThreshold = lfsThreshold
+        self.identity = identity
+        self.encryptNewFolders = encryptNewFolders
     }
 
     // MARK: Remote to local
@@ -119,7 +132,7 @@ public actor SyncEngine {
     }
 
     /// Fetches the remote tree if the head moved and applies it. Caller holds the repo lock.
-    private func refresh(_ name: String, knownHead: (commit: String, tree: String)? = nil, claims: [String: String] = [:]) async throws {
+    func refresh(_ name: String, knownHead: (commit: String, tree: String)? = nil, claims: [String: String] = [:]) async throws {
         guard let rec = try store.repo(named: name) else { return }
         let head: String
         let treeSHA: String
@@ -139,12 +152,18 @@ public actor SyncEngine {
             if let date = info.date { commitDate = date }
         }
         let entries = try await client.fullTree(owner: rec.owner, repo: name, sha: treeSHA)
+        if entries.contains(where: { $0.path == Reserved.vaultFile }) {
+            try await refreshVault(rec, head: head, entries: entries, claims: claims, commitDate: commitDate)
+            return
+        }
+        vaults[name] = nil
+        lockedRepos.remove(name)
         let meta = await loadMeta(rec, entries: entries)
         try apply(repo: rec, head: head, entries: entries, claims: claims, meta: meta, fallbackDate: commitDate)
     }
 
     /// Reads `.gitdrive/meta.json` from a tree. A missing or unreadable file just means no stored dates.
-    private func loadMeta(_ rec: RepoRecord, entries: [TreeEntry]) async -> DriveMeta {
+    func loadMeta(_ rec: RepoRecord, entries: [TreeEntry]) async -> DriveMeta {
         guard let entry = entries.first(where: { $0.path == Reserved.metaFile && $0.type == .blob }) else { return DriveMeta() }
         if let cached = metaCache[entry.sha] { return cached }
         guard let data = try? await client.blobData(owner: rec.owner, repo: rec.name, sha: entry.sha) else { return DriveMeta() }
@@ -159,7 +178,7 @@ public actor SyncEngine {
     /// the commit date, when their contents change.
     func apply(
         repo rec: RepoRecord, head: String?, entries: [TreeEntry], claims: [String: String],
-        meta: DriveMeta = DriveMeta(), fallbackDate: Date = Date()
+        meta: DriveMeta = DriveMeta(), fallbackDate: Date = Date(), displayName: String? = nil
     ) throws {
         struct Remote { let isDirectory: Bool; let sha: String?; let size: Int64 }
         var remote: [String: Remote] = [:]
@@ -178,7 +197,11 @@ public actor SyncEngine {
         let now = fallbackDate
 
         try store.write { w in
-            guard let root = try w.item(repo: rec.name, path: "") else { return }
+            guard var root = try w.item(repo: rec.name, path: "") else { return }
+            if root.displayName != displayName {
+                root.displayName = displayName
+                try w.upsert(root)
+            }
             let claimedIDs = Set(claims.values)
 
             // Ordered by depth so parents always exist before their children.
@@ -241,12 +264,13 @@ public actor SyncEngine {
         guard let item = try store.item(id: id), let sha = item.sha, let rec = try store.repo(named: item.repo) else {
             throw DriveError.noSuchItem
         }
-        let url = try await client.downloadContents(owner: rec.owner, repo: item.repo, sha: sha)
-        return (url, item)
+        return (try await readContent(rec, sha: sha), item)
     }
 
     public func createFolder(parentID: String, name: String) async throws -> ItemRecord {
         if parentID == ItemStore.rootID {
+            if try store.children(of: ItemStore.rootID).contains(where: { $0.filename == name }) { throw DriveError.filenameCollision }
+            if encryptNewFolders() { return try await createVaultFolder(named: name) }
             if try store.repo(named: Reserved.repoPrefix + name) != nil { throw DriveError.filenameCollision }
             let repo = try await client.createDriveRepo(folderName: name)
             try reconcileRepos(try await client.driveRepos())
@@ -354,11 +378,16 @@ public actor SyncEngine {
         try await commit(repo: repo.name, edits: [edit], claims: [:], message: "Delete \(item.path)")
     }
 
-    private func modifyRepoFolder(_ item: ItemRecord, repo: RepoRecord, newName: String?, newParentID: String?) async throws -> ItemRecord {
+    func modifyRepoFolder(_ item: ItemRecord, repo: RepoRecord, newName: String?, newParentID: String?) async throws -> ItemRecord {
         if let newParentID, newParentID != ItemStore.rootID {
             throw DriveError.unsupportedMove("Top-level folders are GitHub repos and must stay at the top level")
         }
         guard let newName, newName != item.filename else { return item }
+        if isVault(repo.name) {
+            try await renameVault(repo.name, to: newName)
+            guard let updated = try store.item(id: item.id) else { throw DriveError.noSuchItem }
+            return updated
+        }
         let newRepoName = Reserved.repoPrefix + newName
         if try store.repo(named: newRepoName) != nil { throw DriveError.filenameCollision }
         _ = try await client.renameRepo(owner: repo.owner, name: repo.name, to: newRepoName)
@@ -367,7 +396,7 @@ public actor SyncEngine {
         return updated
     }
 
-    private func moveAcrossRepos(
+    func moveAcrossRepos(
         _ item: ItemRecord, from: RepoRecord, to: RepoRecord, path: String, contents: URL?, modified: Date
     ) async throws -> ItemRecord {
         if item.isDirectory {
@@ -377,7 +406,7 @@ public actor SyncEngine {
         if let contents {
             source = contents
         } else {
-            source = try await client.downloadContents(owner: from.owner, repo: from.name, sha: item.sha ?? "")
+            source = try await readContent(from, sha: item.sha ?? "")
         }
         if try store.item(repo: to.name, path: path) != nil { throw DriveError.filenameCollision }
         let (sha, lfs) = try await upload(source, to: to, name: item.filename)
@@ -392,13 +421,10 @@ public actor SyncEngine {
 
     /// Copies every file under a folder into another repo, commits there, and only then deletes the
     /// folder from the source repo. A failure before the delete leaves the original untouched.
-    private func moveFolderAcrossRepos(_ item: ItemRecord, from: RepoRecord, to: RepoRecord, path targetPath: String) async throws -> ItemRecord {
+    func moveFolderAcrossRepos(_ item: ItemRecord, from: RepoRecord, to: RepoRecord, path targetPath: String) async throws -> ItemRecord {
         if try store.item(repo: to.name, path: targetPath) != nil { throw DriveError.filenameCollision }
 
-        let head = try await client.headSHA(owner: from.owner, repo: from.name, branch: from.branch)
-        let tree = try await client.treeSHA(owner: from.owner, repo: from.name, commit: head)
-        let entries = try await client.fullTree(owner: from.owner, repo: from.name, sha: tree)
-        let meta = await loadMeta(from, entries: entries)
+        let (entries, meta) = try await listing(of: from)
         let blobs = entries.filter { $0.type == .blob && $0.path.hasPrefix(item.path + "/") }
 
         // Blobs belong to one repo, so each file is downloaded and uploaded again. Four at a time.
@@ -410,7 +436,7 @@ public actor SyncEngine {
             let copied = try await withThrowingTaskGroup(of: (TreeEntry, String, [String: LFSObject]).self) { group in
                 for blob in chunk {
                     group.addTask {
-                        let file = try await self.client.downloadContents(owner: from.owner, repo: from.name, sha: blob.sha)
+                        let file = try await self.readContent(from, sha: blob.sha)
                         defer { try? FileManager.default.removeItem(at: file) }
                         let (sha, lfs) = try await self.upload(file, to: to, name: blob.path)
                         return (blob, sha, lfs)
@@ -443,7 +469,7 @@ public actor SyncEngine {
 
     // MARK: Commits
 
-    private struct PendingCommit {
+    struct PendingCommit {
         let edits: [Edit]
         let claims: [String: String]
         let dates: [String: Date]
@@ -453,8 +479,8 @@ public actor SyncEngine {
         let continuation: CheckedContinuation<Void, Error>
     }
 
-    private var pending: [String: [PendingCommit]] = [:]
-    private var draining: Set<String> = []
+    var pending: [String: [PendingCommit]] = [:]
+    var draining: Set<String> = []
 
     /// Queues edits for a repo. Edits that arrive while a commit is in flight are batched into the next one.
     func commit(
@@ -472,7 +498,7 @@ public actor SyncEngine {
         }
     }
 
-    private func drain(_ repo: String) async {
+    func drain(_ repo: String) async {
         while let batch = pending[repo], !batch.isEmpty {
             pending[repo] = []
             do {
@@ -487,7 +513,11 @@ public actor SyncEngine {
     }
 
     /// Builds one commit from a batch and fast-forwards the branch. Retries on top of new remote commits.
-    private func performCommit(repo name: String, batch: [PendingCommit]) async throws {
+    func performCommit(repo name: String, batch: [PendingCommit]) async throws {
+        if isVault(name) {
+            try await performVaultCommit(repo: name, batch: batch)
+            return
+        }
         for attempt in 1...3 {
             guard let rec = try store.repo(named: name) else { throw DriveError.noSuchItem }
             let head = try await client.headSHA(owner: rec.owner, repo: name, branch: rec.branch)
@@ -599,7 +629,7 @@ public actor SyncEngine {
 
     // MARK: Helpers
 
-    private func location(of folderID: String) throws -> (RepoRecord, String) {
+    func location(of folderID: String) throws -> (RepoRecord, String) {
         guard let folder = try store.item(id: folderID), folder.isDirectory,
               let repo = try store.repo(named: folder.repo) else { throw DriveError.noSuchItem }
         return (repo, folder.path)
@@ -607,7 +637,8 @@ public actor SyncEngine {
 
     /// Uploads file contents and returns the blob to commit. Files over the LFS threshold go to LFS
     /// storage and the blob is their pointer; the returned map links that pointer to its object.
-    private func upload(_ file: URL, to repo: RepoRecord, name: String) async throws -> (String, [String: LFSObject]) {
+    func upload(_ file: URL, to repo: RepoRecord, name: String) async throws -> (String, [String: LFSObject]) {
+        if isVault(repo.name) { return (try stage(file, in: repo.name), [:]) }
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
         if let threshold = lfsThreshold(), size > threshold {
             let object = try await client.lfsUpload(owner: repo.owner, repo: repo.name, file: file)
@@ -618,7 +649,8 @@ public actor SyncEngine {
         return (try await client.createBlob(owner: repo.owner, repo: repo.name, contentsOf: file), [:])
     }
 
-    private func emptyBlob(in repo: RepoRecord) async throws -> String {
+    func emptyBlob(in repo: RepoRecord) async throws -> String {
+        if isVault(repo.name) { return try stage(data: Data(), in: repo.name) }
         if let sha = emptyBlobs[repo.name] { return sha }
         let sha = try await client.createBlob(owner: repo.owner, repo: repo.name, data: Data())
         emptyBlobs[repo.name] = sha
@@ -628,8 +660,8 @@ public actor SyncEngine {
 
 /// Serializes async work per key without blocking threads.
 actor KeyedLock {
-    private var busy: Set<String> = []
-    private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    var busy: Set<String> = []
+    var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     func withLock<T: Sendable>(_ key: String, _ body: @Sendable () async throws -> T) async throws -> T {
         await acquire(key)
@@ -637,12 +669,12 @@ actor KeyedLock {
         return try await body()
     }
 
-    private func acquire(_ key: String) async {
+    func acquire(_ key: String) async {
         if busy.insert(key).inserted { return }
         await withCheckedContinuation { waiters[key, default: []].append($0) }
     }
 
-    private func release(_ key: String) {
+    func release(_ key: String) {
         if var queue = waiters[key], !queue.isEmpty {
             let next = queue.removeFirst()
             waiters[key] = queue

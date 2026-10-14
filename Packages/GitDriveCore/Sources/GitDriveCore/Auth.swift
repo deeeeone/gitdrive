@@ -170,3 +170,69 @@ extension GitHubClient {
         try await updateRef(owner: owner, repo: repo, branch: branch, sha: commit, force: true)
     }
 }
+
+/// Keeps the vault private key in the data protection Keychain with iCloud Keychain sync on,
+/// so every Mac signed in to the same iCloud account can open encrypted folders.
+public struct IdentityStore: Sendable {
+    public let service = "com.diwan.gitdrive.vault"
+    public let account = "identity"
+    public let accessGroup: String
+
+    public init(accessGroup: String = AppConfig.keychainGroup) {
+        self.accessGroup = accessGroup
+    }
+
+    private func query(synchronizable: CFTypeRef) -> [String: Any] {
+        var q: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true,
+            kSecAttrSynchronizable as String: synchronizable,
+        ]
+        if !accessGroup.isEmpty { q[kSecAttrAccessGroup as String] = accessGroup }
+        return q
+    }
+
+    public func load() -> VaultIdentity? {
+        var q = query(synchronizable: kSecAttrSynchronizableAny)
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
+        return try? VaultIdentity(secret: data)
+    }
+
+    /// Saves the key with iCloud sync. Never overwrites an existing key, since that would lock every folder made with it.
+    public func save(_ identity: VaultIdentity) throws {
+        guard load() == nil else { return }
+        var q = query(synchronizable: kCFBooleanTrue)
+        q[kSecValueData as String] = identity.secret
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        q[kSecAttrLabel as String] = "GitDrive encryption key"
+        let status = SecItemAdd(q as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [
+                NSLocalizedDescriptionKey: "Could not save the encryption key to the Keychain (\(status))",
+            ])
+        }
+    }
+
+    /// Loads the key, creating and saving one the first time.
+    public func loadOrCreate() throws -> VaultIdentity {
+        if let existing = load() { return existing }
+        let identity = try VaultIdentity.generate()
+        try save(identity)
+        return identity
+    }
+}
+
+extension AppConfig {
+    public static let encryptNewFoldersKey = "encryptNewFolders"
+
+    /// Off by default. When on, new top-level folders are created encrypted.
+    public static var encryptNewFolders: Bool {
+        get { sharedDefaults?.bool(forKey: encryptNewFoldersKey) ?? false }
+        set { sharedDefaults?.set(newValue, forKey: encryptNewFoldersKey) }
+    }
+}

@@ -18,9 +18,27 @@ public struct ItemRecord: Codable, Sendable, Equatable, FetchableRecord, Persist
     public var modified: Date
     /// Change sequence number, used as the File Provider sync anchor.
     public var seq: Int64
+    /// Name shown for a repo's own folder when it differs from the repo name (encrypted folders).
+    public var displayName: String?
+
+    public init(
+        id: String, repo: String, path: String, parentID: String, isDirectory: Bool, sha: String?,
+        size: Int64, modified: Date, seq: Int64, displayName: String? = nil
+    ) {
+        self.id = id
+        self.repo = repo
+        self.path = path
+        self.parentID = parentID
+        self.isDirectory = isDirectory
+        self.sha = sha
+        self.size = size
+        self.modified = modified
+        self.seq = seq
+        self.displayName = displayName
+    }
 
     public var filename: String {
-        if path.isEmpty { return String(repo.dropFirst(Reserved.repoPrefix.count)) }
+        if path.isEmpty { return displayName ?? String(repo.dropFirst(Reserved.repoPrefix.count)) }
         return String(path.split(separator: "/").last ?? "")
     }
 }
@@ -89,6 +107,9 @@ public final class ItemStore: Sendable {
                 t.primaryKey("key", .text)
                 t.column("value", .integer).notNull()
             }
+        }
+        m.registerMigration("v2-display-name") { db in
+            try db.alter(table: "items") { t in t.add(column: "displayName", .text) }
         }
         return m
     }

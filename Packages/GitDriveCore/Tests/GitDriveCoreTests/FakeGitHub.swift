@@ -105,6 +105,15 @@ final class FakeGitHub: @unchecked Sendable {
                 if method == "PUT" { lfsObjects[oid] = body; return (200, Data()) }
                 return lfsObjects[oid].map { (200, $0) } ?? (404, Data())
             }
+            if method == "POST", path == "/user/repos" {
+                let name = json["name"] as! String
+                let tree = newSHA()
+                trees[tree] = [:]
+                let commit = newSHA()
+                commits[commit] = Commit(tree: tree, parents: [])
+                repos[name] = commit
+                return (201, encode(repoJSON(name)))
+            }
             if method == "GET", path == "/user/repos" {
                 let list = repos.keys.sorted().map { name -> [String: Any] in
                     ["name": name, "owner": ["login": owner], "default_branch": "main", "size": 1, "archived": false, "private": true]
@@ -112,11 +121,25 @@ final class FakeGitHub: @unchecked Sendable {
                 return (200, encode(list))
             }
             guard parts.count >= 3, parts[0] == "repos", let head = repos[parts[2]] else { return (404, encode(["message": "Not Found"])) }
+            let rest = Array(parts.dropFirst(3))
+            if method == "GET", parts.count == 3 { return (200, encode(repoJSON(parts[2]))) }
+            if method == "PUT", rest.first == "contents" {
+                let filePath = rest.dropFirst().joined(separator: "/")
+                var flat = trees[commits[head]!.tree]!
+                let sha = newSHA()
+                blobs[sha] = Data(base64Encoded: json["content"] as? String ?? "") ?? Data()
+                flat[filePath] = sha
+                let tree = newSHA()
+                trees[tree] = flat
+                let commit = newSHA()
+                commits[commit] = Commit(tree: tree, parents: [head])
+                repos[parts[2]] = commit
+                return (201, encode(["content": ["sha": sha]]))
+            }
             if method == "DELETE", parts.count == 3 {
                 repos[parts[2]] = nil
                 return (204, Data())
             }
-            let rest = Array(parts.dropFirst(3))
 
             switch (method, rest.first, rest.dropFirst().first) {
             case ("GET", "git", "ref"):
@@ -161,6 +184,15 @@ final class FakeGitHub: @unchecked Sendable {
         }
     }
 
+    private func repoJSON(_ name: String) -> [String: Any] {
+        ["name": name, "owner": ["login": owner], "default_branch": "main", "size": 1, "archived": false, "private": true]
+    }
+
+    /// Every blob's raw bytes in a repo's current tree, for checking nothing readable leaked.
+    func rawBlobs(repo: String) -> [String: Data] {
+        sync { trees[commits[repos[repo]!]!.tree]!.mapValues { blobs[$0]! } }
+    }
+
     private func treeListing(_ flat: [String: String]) -> [[String: Any]] {
         var dirs = Set<String>()
         for path in flat.keys {
@@ -191,15 +223,19 @@ final class FakeGitHub: @unchecked Sendable {
     }
 }
 
-/// Routes URLSession traffic to the fake for the duration of a test.
+/// Routes URLSession traffic to the fake for the duration of a test. Each session carries its own
+/// server ID in a header, so suites running in parallel never share state.
 final class FakeProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var server: FakeGitHub?
+    nonisolated(unsafe) static var servers: [String: FakeGitHub] = [:]
+    static let lock = NSLock()
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let (status, data) = Self.server!.handle(request)
+        let id = request.value(forHTTPHeaderField: "X-Fake-Server") ?? ""
+        let server = Self.lock.withLock { Self.servers[id] }
+        let (status, data) = server?.handle(request) ?? (500, Data())
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
@@ -209,9 +245,11 @@ final class FakeProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 
     static func session(for server: FakeGitHub) -> URLSession {
-        Self.server = server
+        let id = UUID().uuidString
+        lock.withLock { servers[id] = server }
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [FakeProtocol.self]
+        config.httpAdditionalHeaders = ["X-Fake-Server": id]
         return URLSession(configuration: config)
     }
 }
