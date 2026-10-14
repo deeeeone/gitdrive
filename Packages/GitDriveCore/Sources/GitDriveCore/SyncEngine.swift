@@ -53,6 +53,10 @@ public actor SyncEngine {
     let lfsThreshold: @Sendable () -> Int64?
     let identity: @Sendable () -> VaultIdentity?
     let encryptNewFolders: @Sendable () -> Bool
+    let makeThumbnails: @Sendable () -> Bool
+    /// Thumbnails made at upload time, by repo and blob SHA (or content ID), waiting for the commit.
+    var pendingMedia: [String: [String: MediaInfo]] = [:]
+    var thumbCache = PackCache()
 
     // Encrypted folders. See SyncEngine+Vault.swift.
     var vaults: [String: VaultState] = [:]
@@ -69,7 +73,8 @@ public actor SyncEngine {
         repoDeletion: @escaping @Sendable () -> RepoDeletion = { .archive },
         lfsThreshold: @escaping @Sendable () -> Int64? = { nil },
         identity: @escaping @Sendable () -> VaultIdentity? = { nil },
-        encryptNewFolders: @escaping @Sendable () -> Bool = { false }
+        encryptNewFolders: @escaping @Sendable () -> Bool = { false },
+        makeThumbnails: @escaping @Sendable () -> Bool = { false }
     ) {
         self.client = client
         self.store = store
@@ -77,6 +82,7 @@ public actor SyncEngine {
         self.lfsThreshold = lfsThreshold
         self.identity = identity
         self.encryptNewFolders = encryptNewFolders
+        self.makeThumbnails = makeThumbnails
     }
 
     // MARK: Remote to local
@@ -557,6 +563,25 @@ public actor SyncEngine {
                 if let date = dates[change.path] { meta.modified[change.path] = date.wholeSeconds }
                 meta.lfs[change.path] = lfsBySHA[sha]
             }
+            // Thumbnails: one small blob per file, keyed by the file's blob SHA. Unused ones are dropped.
+            var liveSHAs = Set(remoteEntries.filter { $0.type == .blob }.map(\.sha))
+            for change in changes { if let sha = change.sha { liveSHAs.insert(sha) } }
+            for change in changes where change.sha == nil {
+                if let old = remoteSHA[change.path], !changes.contains(where: { $0.sha == old }) { liveSHAs.remove(old) }
+            }
+            for change in changes {
+                guard let sha = change.sha, meta.media[sha] == nil, let info = pendingMedia[name]?[sha] else { continue }
+                var ref = DriveMeta.MediaRef(taken: info.taken, latitude: info.latitude, longitude: info.longitude)
+                if let thumb = info.thumb {
+                    ref.thumb = try await client.createBlob(owner: rec.owner, repo: name, data: thumb)
+                    changes.append(TreeChange(path: Reserved.thumbPath(sha), sha: ref.thumb))
+                }
+                meta.media[sha] = ref
+            }
+            for (sha, _) in meta.media where !liveSHAs.contains(sha) {
+                meta.media[sha] = nil
+                if remoteSHA[Reserved.thumbPath(sha)] != nil { changes.append(TreeChange(path: Reserved.thumbPath(sha), sha: nil)) }
+            }
             if Set(meta.lfs.keys) != Set(oldMeta.lfs.keys) {
                 var existing = ""
                 if let entry = remoteEntries.first(where: { $0.path == Reserved.attributesFile && $0.type == .blob }),
@@ -587,6 +612,7 @@ public actor SyncEngine {
                 continue
             }
             try await refresh(name, knownHead: (commit, tree), claims: claims)
+            for change in changes { if let sha = change.sha { pendingMedia[name]?[sha] = nil } }
             return
         }
     }
@@ -641,15 +667,22 @@ public actor SyncEngine {
     /// Uploads file contents and returns the blob to commit. Files over the LFS threshold go to LFS
     /// storage and the blob is their pointer; the returned map links that pointer to its object.
     func upload(_ file: URL, to repo: RepoRecord, name: String) async throws -> (String, [String: LFSObject]) {
-        if isVault(repo.name) { return (try stage(file, in: repo.name), [:]) }
+        if isVault(repo.name) {
+            let content = try stage(file, in: repo.name)
+            await recordMedia(file, name: name, repo: repo.name, key: content)
+            return (content, [:])
+        }
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
         if let threshold = lfsThreshold(), size > threshold {
             let object = try await client.lfsUpload(owner: repo.owner, repo: repo.name, file: file)
             let sha = try await client.createBlob(owner: repo.owner, repo: repo.name, data: object.pointer)
+            await recordMedia(file, name: name, repo: repo.name, key: sha)
             return (sha, [sha: object])
         }
         if size > maxFileSize { throw DriveError.tooLarge(name) }
-        return (try await client.createBlob(owner: repo.owner, repo: repo.name, contentsOf: file), [:])
+        let sha = try await client.createBlob(owner: repo.owner, repo: repo.name, contentsOf: file)
+        await recordMedia(file, name: name, repo: repo.name, key: sha)
+        return (sha, [:])
     }
 
     func emptyBlob(in repo: RepoRecord) async throws -> String {

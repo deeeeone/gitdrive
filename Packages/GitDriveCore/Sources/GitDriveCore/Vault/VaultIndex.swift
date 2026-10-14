@@ -12,6 +12,12 @@ public struct VaultIndex: Codable, Sendable, Equatable {
         public var m: Double
         /// Chunk IDs in order.
         public var k: [String]
+        /// Thumbnail chunk ID, packed apart from file data so icons never download file contents.
+        public var t: String?
+        /// When the photo or video was taken, seconds since 1970.
+        public var d: Double?
+        /// Latitude and longitude.
+        public var g: [Double]?
     }
 
     public struct Location: Codable, Sendable, Equatable {
@@ -54,14 +60,19 @@ public struct VaultIndex: Codable, Sendable, Equatable {
     }
 
     /// Packs still holding at least one chunk that a file uses.
+    /// Every chunk a file or thumbnail uses.
+    var usedChunks: Set<String> {
+        Set(files.values.flatMap { $0.k + ($0.t.map { [$0] } ?? []) })
+    }
+
     public var livePacks: Set<String> {
-        let used = Set(files.values.flatMap(\.k))
+        let used = usedChunks
         return Set(chunks.filter { used.contains($0.key) }.map(\.value.p))
     }
 
     /// Drops chunk locations nothing refers to, so dead packs can be removed from the repo.
     public mutating func pruneChunks() {
-        let used = Set(files.values.flatMap(\.k))
+        let used = usedChunks
         chunks = chunks.filter { used.contains($0.key) }
     }
 

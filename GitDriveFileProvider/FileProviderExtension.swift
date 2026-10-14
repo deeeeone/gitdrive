@@ -32,7 +32,8 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 repoDeletion: { AppConfig.repoDeletion },
                 lfsThreshold: { AppConfig.lfsThresholdBytes },
                 identity: { IdentityStore().load() },
-                encryptNewFolders: { AppConfig.encryptNewFolders }
+                encryptNewFolders: { AppConfig.encryptNewFolders },
+                makeThumbnails: { AppConfig.isOn(.thumbnails) }
             )
             cachedEngine = engine
             return engine
@@ -203,6 +204,32 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data().write(to: url)
         return url
+    }
+}
+
+// MARK: Thumbnails
+
+/// Icon view thumbnails from the small previews saved at upload, so nothing has to download.
+extension FileProviderExtension: NSFileProviderThumbnailing {
+    func fetchThumbnails(
+        for itemIdentifiers: [NSFileProviderItemIdentifier],
+        requestedSize size: CGSize,
+        perThumbnailCompletionHandler: @escaping (NSFileProviderItemIdentifier, Data?, Error?) -> Void,
+        completionHandler: @escaping (Error?) -> Void
+    ) -> Progress {
+        let progress = Progress(totalUnitCount: Int64(itemIdentifiers.count))
+        let each = Unchecked(perThumbnailCompletionHandler)
+        let done = Unchecked(completionHandler)
+        Task {
+            let engine = try? self.engine()
+            for id in itemIdentifiers {
+                let data = AppConfig.isOn(.thumbnails) ? await engine?.thumbnail(id: id.rawValue) : nil
+                each.value(id, data, nil)
+                progress.completedUnitCount += 1
+            }
+            done.value(nil)
+        }
+        return progress
     }
 }
 

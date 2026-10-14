@@ -189,13 +189,22 @@ public struct DriveMeta: Codable, Sendable, Equatable {
     public var modified: [String: Date] = [:]
     /// Repo path to the LFS object behind its pointer file.
     public var lfs: [String: LFSObject] = [:]
+    /// Blob SHA to photo facts and the blob SHA of its thumbnail, so they follow renames for free.
+    public var media: [String: MediaRef] = [:]
+
+    public struct MediaRef: Codable, Sendable, Equatable {
+        public var thumb: String?
+        public var taken: Date?
+        public var latitude: Double?
+        public var longitude: Double?
+    }
 
     public init(modified: [String: Date] = [:], lfs: [String: LFSObject] = [:]) {
         self.modified = modified
         self.lfs = lfs
     }
 
-    enum CodingKeys: String, CodingKey { case version, modified, lfs }
+    enum CodingKeys: String, CodingKey { case version, modified, lfs, media }
 
     /// Missing keys are fine, so files written by older versions still load.
     public init(from decoder: Decoder) throws {
@@ -203,6 +212,7 @@ public struct DriveMeta: Codable, Sendable, Equatable {
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         modified = try c.decodeIfPresent([String: Date].self, forKey: .modified) ?? [:]
         lfs = try c.decodeIfPresent([String: LFSObject].self, forKey: .lfs) ?? [:]
+        media = try c.decodeIfPresent([String: MediaRef].self, forKey: .media) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -210,6 +220,7 @@ public struct DriveMeta: Codable, Sendable, Equatable {
         try c.encode(version, forKey: .version)
         try c.encode(modified, forKey: .modified)
         if !lfs.isEmpty { try c.encode(lfs, forKey: .lfs) }
+        if !media.isEmpty { try c.encode(media, forKey: .media) }
     }
 
     public func encoded() throws -> Data {

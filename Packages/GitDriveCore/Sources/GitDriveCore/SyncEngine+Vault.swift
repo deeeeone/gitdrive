@@ -194,9 +194,15 @@ extension SyncEngine {
                 let previous = index.files[change.path].map { Date(timeIntervalSince1970: $0.m) }
                 let date = (dates[change.path] ?? previous ?? Date()).wholeSeconds.timeIntervalSince1970
                 if let staged = stagedFiles[name]?[content] {
-                    index.files[change.path] = .init(c: content, s: staged.size, m: date, k: staged.chunks)
+                    let media = pendingMedia[name]?[content]
+                    index.files[change.path] = .init(
+                        c: content, s: staged.size, m: date, k: staged.chunks,
+                        t: media?.thumb.map { String(decoding: $0, as: UTF8.self) },
+                        d: media?.taken?.timeIntervalSince1970,
+                        g: media?.latitude.flatMap { lat in media?.longitude.map { [lat, $0] } }
+                    )
                 } else if let existing = state.index.file(withContent: content) {
-                    index.files[change.path] = .init(c: content, s: existing.s, m: date, k: existing.k)
+                    index.files[change.path] = .init(c: content, s: existing.s, m: date, k: existing.k, t: existing.t, d: existing.d, g: existing.g)
                 } else {
                     throw VaultError.corrupt("contents for \(change.path) went missing before saving")
                 }
@@ -207,6 +213,7 @@ extension SyncEngine {
                 vaults[name] = updated
                 try await refresh(name, knownHead: (commit, tree), claims: claims)
                 clearStaging(name, keeping: changes)
+                for change in changes { if let sha = change.sha { pendingMedia[name]?[sha] = nil } }
                 return
             } catch let e as GitHubError where e.kind == .conflict && attempt < 3 {
                 log.notice("\(name, privacy: .public) moved during commit, retrying (\(attempt))")
@@ -224,13 +231,16 @@ extension SyncEngine {
         var changes: [TreeChange] = []
 
         var needed: [String] = []
+        var thumbs: [String] = []
         var seen = Set<String>()
         for file in index.files.values {
             for id in file.k where index.chunks[id] == nil && seen.insert(id).inserted { needed.append(id) }
+            if let t = file.t, index.chunks[t] == nil, seen.insert(t).inserted { thumbs.append(t) }
         }
 
         // Group chunks into packs of about targetPackSize, in order.
-        var groups: [[String]] = [[]]
+        // Thumbnails get their own packs, so icon view downloads only thumbnails.
+        var groups: [[String]] = [thumbs, []]
         var groupSize = 0
         var sealedSizes: [String: Int] = [:]
         for id in needed {

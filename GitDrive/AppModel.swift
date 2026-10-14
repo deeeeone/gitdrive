@@ -187,7 +187,8 @@ final class AppModel {
             client: client, store: store,
             repoDeletion: { .delete },
             lfsThreshold: { AppConfig.lfsThresholdBytes },
-            identity: { IdentityStore().load() }
+            identity: { IdentityStore().load() },
+            makeThumbnails: { AppConfig.isOn(.thumbnails) }
         )
         self.engine = engine
         return engine
