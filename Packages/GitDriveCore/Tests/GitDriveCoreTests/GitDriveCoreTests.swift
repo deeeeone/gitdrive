@@ -404,6 +404,22 @@ struct SyncEngineTests {
         #expect(fake.commitCount(repo: "drive-media") == commits)
     }
 
+    @Test func duplicatesAreFoundAcrossFolders() async throws {
+        fake.seed(repo: "drive-a", files: ["photo.jpg": "same bytes", "unique.txt": "only here"])
+        fake.seed(repo: "drive-b", files: ["copy of photo.jpg": "same bytes", "nested/again.jpg": "same bytes"])
+        try await engine.syncAll()
+        let groups = try await engine.duplicates()
+        #expect(groups.count == 1)
+        let group = try #require(groups.first)
+        #expect(group.items.count == 3)
+        #expect(group.wasted == Int64("same bytes".utf8.count) * 2)
+
+        try await engine.removeDuplicates(group, keeping: try #require(group.items.first { $0.repo == "drive-a" }))
+        #expect(fake.files(repo: "drive-a")["photo.jpg"] == "same bytes")
+        #expect(fake.files(repo: "drive-b")["copy of photo.jpg"] == nil)
+        #expect(try await engine.duplicates().isEmpty)
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

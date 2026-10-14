@@ -41,8 +41,9 @@ enum Tools {
         }
     }
 
-    /// Filled in by the duplicate finder.
-    static func showDuplicates(model: AppModel) {}
+    static func showDuplicates(model: AppModel) {
+        ToolWindows.show("Duplicates", id: "duplicates", size: CGSize(width: 600, height: 460)) { DuplicatesView(model: model) }
+    }
 
     static func showBitRot(model: AppModel) {
         ToolWindows.show("Bit-rot Check", id: "bitrot", size: CGSize(width: 520, height: 360)) { BitRotView(model: model) }
