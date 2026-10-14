@@ -111,7 +111,7 @@ public struct DeviceFlow: Sendable {
 
     public let clientID: String
     /// `delete_repo` lets deleting a top-level folder delete its repo.
-    public var scope = "repo delete_repo"
+    public var scope = "repo delete_repo workflow"
     private let session: URLSession
 
     public init(clientID: String, session: URLSession = .shared) {

@@ -19,6 +19,7 @@ final class FakeGitHub: @unchecked Sendable {
     var requests: [String] = []
     var lfsObjects: [String: Data] = [:]
     var pages: Set<String> = []
+    var dispatches: [[String: Any]] = []
     private var counter = 0
 
     func sync<T>(_ body: () throws -> T) rethrows -> T {
@@ -209,6 +210,15 @@ final class FakeGitHub: @unchecked Sendable {
                 return (204, Data())
             }
 
+            if rest.first == "actions" {
+                if method == "POST", rest.last == "dispatches" {
+                    dispatches.append(json["inputs"] as? [String: Any] ?? [:])
+                    return (204, Data())
+                }
+                let run: [String: Any] = ["id": 7, "html_url": "https://github.com/\(owner)/\(parts[2])/actions/runs/7", "status": "completed", "conclusion": "success"]
+                if rest.last == "runs" { return (200, encode(["workflow_runs": dispatches.isEmpty ? [] : [run]])) }
+                return (200, encode(run))
+            }
             switch (method, rest.first, rest.dropFirst().first) {
             case ("GET", "git", "ref"):
                 return (200, encode(["object": ["sha": head]]))

@@ -18,6 +18,11 @@ enum Tools {
             ToolWindows.show("Publish", id: "publish-\(request.repo)-\(request.path)", size: CGSize(width: 460, height: 260)) {
                 PublishView(model: model, repo: request.repo, path: request.path)
             }
+        case .compressVideo, .convertPDF:
+            let task: CloudTask = request.kind == .compressVideo ? .compressVideo : .convertPDF
+            ToolWindows.show("Run in the Cloud", id: "cloud-\(request.repo)-\(request.path)", size: CGSize(width: 420, height: 200)) {
+                CloudRunView(model: model, repo: request.repo, path: request.path, task: task)
+            }
         case .tripwire:
             showTripwire(model: model)
         case .conflict:

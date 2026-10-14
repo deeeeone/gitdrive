@@ -60,6 +60,22 @@
 				<key>NSExtensionFileProviderActionName</key>
 				<string>Publish as Website…</string>
 			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.cloudVideo == YES ).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>com.diwan.gitdrive.action.compressVideo</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Compress Video in the Cloud</string>
+			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.cloudPDF == YES ).@count == 1</string>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>com.diwan.gitdrive.action.convertPDF</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Convert to PDF in the Cloud</string>
+			</dict>
 		</array>
 		<key>NSExtensionFileProviderDocumentGroup</key>
 		<string>$(GITDRIVE_APP_GROUP)</string>

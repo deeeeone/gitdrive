@@ -492,7 +492,7 @@ public actor GitHubClient {
         return req
     }
 
-    private func get<T: Decodable>(_ path: String, query: [String: String] = [:], cache: Bool = false) async throws -> T {
+    func get<T: Decodable>(_ path: String, query: [String: String] = [:], cache: Bool = false) async throws -> T {
         var req = request("GET", path, query: query)
         let key = req.url!
         if cache, let hit = etags[key] {
@@ -508,7 +508,7 @@ public actor GitHubClient {
         return try decode(data)
     }
 
-    private func send<T: Decodable>(_ method: String, _ path: String, body: some Encodable) async throws -> T {
+    func send<T: Decodable>(_ method: String, _ path: String, body: some Encodable) async throws -> T {
         var req = request(method, path)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(body)

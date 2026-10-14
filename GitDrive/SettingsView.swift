@@ -288,6 +288,9 @@ private struct ExtraOptions: View {
             }
             .font(.callout)
             if extra == .passcode { PasscodeOptions() }
+        case .cloudRun:
+            Text("Needs a token with the workflow scope. Private repos get 2,000 free Actions minutes a month.")
+                .font(.caption).foregroundStyle(.secondary)
         case .bitRot:
             Button("Open Bit-rot Check…") { Tools.showBitRot(model: model) }
         case .duplicates:

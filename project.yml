@@ -94,6 +94,12 @@ targets:
             - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.publish
               NSExtensionFileProviderActionName: Publish as Website…
               NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.publish == YES ).@count == 1
+            - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.compressVideo
+              NSExtensionFileProviderActionName: Compress Video in the Cloud
+              NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.cloudVideo == YES ).@count == 1
+            - NSExtensionFileProviderActionIdentifier: com.diwan.gitdrive.action.convertPDF
+              NSExtensionFileProviderActionName: Convert to PDF in the Cloud
+              NSExtensionFileProviderActionActivationRule: SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.cloudPDF == YES ).@count == 1
           NSFileProviderDecorations:
             - Identifier: $(PRODUCT_BUNDLE_IDENTIFIER).encrypted
               BadgeImageType: com.apple.icon-decoration.badge.locked

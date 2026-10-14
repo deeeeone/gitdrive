@@ -16,7 +16,7 @@ public enum Reserved {
 
     public static func isHidden(path: String) -> Bool {
         let parts = path.split(separator: "/")
-        if parts.first.map(String.init) == metaFolder || path == attributesFile { return true }
+        if parts.first.map(String.init) == metaFolder || path == attributesFile || path == ".github/workflows/gitdrive-run.yml" { return true }
         return parts.last.map(String.init) == keepFile
     }
 

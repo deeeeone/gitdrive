@@ -170,7 +170,7 @@ private struct SignInView: View {
                 Button("Sign In") { Task { await model.signIn(withToken: token); token = "" } }
                     .disabled(token.isEmpty)
             }
-            Link("Create a token on GitHub", destination: URL(string: "https://github.com/settings/tokens/new?scopes=repo,delete_repo&description=GitDrive")!)
+            Link("Create a token on GitHub", destination: URL(string: "https://github.com/settings/tokens/new?scopes=repo,delete_repo,workflow&description=GitDrive")!)
                 .font(.caption)
         }
     }

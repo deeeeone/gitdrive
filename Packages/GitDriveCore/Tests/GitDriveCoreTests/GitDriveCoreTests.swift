@@ -389,6 +389,21 @@ struct SyncEngineTests {
         #expect(fake.sync { fake.pages.contains("my-site") })
     }
 
+    @Test func cloudRunsAddTheWorkflowAndDispatch() async throws {
+        fake.seed(repo: "drive-media", files: ["clips/day one.mov": "video"])
+        try await engine.syncAll()
+        let run = try await engine.runInCloud(repo: "drive-media", path: "clips/day one.mov", task: .compressVideo)
+        #expect(run.finished && run.conclusion == "success")
+        #expect(fake.files(repo: "drive-media")[Reserved.cloudWorkflow]?.contains("SRC: ${{ inputs.path }}") == true)
+        #expect(fake.sync { fake.dispatches.first?["path"] as? String } == "clips/day one.mov")
+        #expect(try store.item(repo: "drive-media", path: Reserved.cloudWorkflow) == nil)
+
+        // The workflow is only committed once.
+        let commits = fake.commitCount(repo: "drive-media")
+        _ = try await engine.runInCloud(repo: "drive-media", path: "clips/day one.mov", task: .compressVideo)
+        #expect(fake.commitCount(repo: "drive-media") == commits)
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))
