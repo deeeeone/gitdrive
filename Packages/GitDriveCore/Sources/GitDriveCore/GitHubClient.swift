@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import os
 
@@ -29,14 +30,22 @@ public struct GitHubError: Error, Sendable, Equatable, CustomStringConvertible {
 /// Thin async client for the parts of the GitHub REST API that GitDrive uses.
 public actor GitHubClient {
     public nonisolated let baseURL: URL
+    /// Host for git and LFS endpoints, which live on github.com rather than the API host.
+    public nonisolated let gitURL: URL
     private let session: URLSession
     private let token: String
     private var etags: [URL: (etag: String, body: Data)] = [:]
     private let log = Logger(subsystem: "com.diwan.gitdrive", category: "github")
 
-    public init(token: String, baseURL: URL = URL(string: "https://api.github.com")!, session: URLSession = GitHubClient.makeSession()) {
+    public init(
+        token: String,
+        baseURL: URL = URL(string: "https://api.github.com")!,
+        gitURL: URL = URL(string: "https://github.com")!,
+        session: URLSession = GitHubClient.makeSession()
+    ) {
         self.token = token
         self.baseURL = baseURL
+        self.gitURL = gitURL
         self.session = session
     }
 
@@ -256,6 +265,110 @@ public actor GitHubClient {
         } catch let e as GitHubError where e.kind == .server(status: 422) {
             throw GitHubError(.conflict, "\(repo) changed on GitHub while saving")
         }
+    }
+
+    // MARK: Git LFS
+
+    /// GitHub's LFS limit for a single file on Free and Pro plans.
+    public static let maxLFSFileSize: Int64 = 2 * 1024 * 1024 * 1024
+
+    private struct LFSAction: Decodable { let href: URL; let header: [String: String]? }
+    private struct LFSBatchObject: Decodable {
+        struct Err: Decodable { let message: String }
+        let oid: String
+        let actions: [String: LFSAction]?
+        let error: Err?
+    }
+
+    private func lfsBatch(owner: String, repo: String, operation: String, object: LFSObject) async throws -> LFSBatchObject {
+        struct Body: Encodable {
+            struct Obj: Encodable { let oid: String; let size: Int64 }
+            let operation: String
+            let transfers = ["basic"]
+            let objects: [Obj]
+        }
+        struct Reply: Decodable { let objects: [LFSBatchObject] }
+        var req = URLRequest(url: gitURL.appendingPathComponent("\(owner)/\(repo).git/info/lfs/objects/batch"))
+        req.httpMethod = "POST"
+        req.setValue("application/vnd.git-lfs+json", forHTTPHeaderField: "Accept")
+        req.setValue("application/vnd.git-lfs+json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Basic " + Data("x-access-token:\(token)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")
+        req.setValue("GitDrive", forHTTPHeaderField: "User-Agent")
+        req.httpBody = try JSONEncoder().encode(Body(operation: operation, objects: [.init(oid: object.oid, size: object.size)]))
+        let (data, _) = try await perform(req)
+        guard let reply = try? JSONDecoder().decode(Reply.self, from: data), let first = reply.objects.first else {
+            throw GitHubError(.transport, "Unexpected reply from GitHub LFS")
+        }
+        if let error = first.error { throw GitHubError(.server(status: 422), "Git LFS: \(error.message)") }
+        return first
+    }
+
+    /// Hashes a file without loading it all into memory.
+    public static func lfsObject(for file: URL) throws -> LFSObject {
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        var size: Int64 = 0
+        while let chunk = try handle.read(upToCount: 4 * 1024 * 1024), !chunk.isEmpty {
+            hasher.update(data: chunk)
+            size += Int64(chunk.count)
+        }
+        let oid = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return LFSObject(oid: oid, size: size)
+    }
+
+    /// Uploads a file to LFS storage. Skips the upload when GitHub already has the object.
+    public func lfsUpload(owner: String, repo: String, file: URL) async throws -> LFSObject {
+        let object = try Self.lfsObject(for: file)
+        guard object.size <= Self.maxLFSFileSize else {
+            throw GitHubError(.tooLarge, "\(file.lastPathComponent) is larger than GitHub's 2 GB Git LFS limit")
+        }
+        let batch = try await lfsBatch(owner: owner, repo: repo, operation: "upload", object: object)
+        if let upload = batch.actions?["upload"] {
+            var req = URLRequest(url: upload.href)
+            req.httpMethod = "PUT"
+            upload.header?.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+            req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+            let (_, response) = try await session.upload(for: req, fromFile: file)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw GitHubError(.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0), "Git LFS upload failed")
+            }
+            if let verify = batch.actions?["verify"] {
+                var v = URLRequest(url: verify.href)
+                v.httpMethod = "POST"
+                verify.header?.forEach { v.setValue($1, forHTTPHeaderField: $0) }
+                v.setValue("application/vnd.git-lfs+json", forHTTPHeaderField: "Content-Type")
+                struct Verify: Encodable { let oid: String; let size: Int64 }
+                v.httpBody = try JSONEncoder().encode(Verify(oid: object.oid, size: object.size))
+                _ = try await perform(v)
+            }
+        }
+        return object
+    }
+
+    /// Downloads an LFS object to a temporary file. Counts against the repo owner's LFS bandwidth.
+    public func lfsDownload(owner: String, repo: String, object: LFSObject) async throws -> URL {
+        let batch = try await lfsBatch(owner: owner, repo: repo, operation: "download", object: object)
+        guard let action = batch.actions?["download"] else { throw GitHubError(.notFound, "The LFS object is missing on GitHub") }
+        var req = URLRequest(url: action.href)
+        action.header?.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+        let request = req
+        return try await withRetry {
+            let (url, response) = try await self.session.download(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw GitHubError(.server(status: (response as? HTTPURLResponse)?.statusCode ?? 0), "Git LFS download failed")
+            }
+            return url
+        }
+    }
+
+    /// Downloads a file's real contents, following an LFS pointer if the blob is one.
+    public func downloadContents(owner: String, repo: String, sha: String) async throws -> URL {
+        let url = try await downloadBlob(owner: owner, repo: repo, sha: sha)
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard size < 1024, let data = try? Data(contentsOf: url), let object = LFSObject.parse(pointer: data) else { return url }
+        try? FileManager.default.removeItem(at: url)
+        return try await lfsDownload(owner: owner, repo: repo, object: object)
     }
 
     // MARK: Plumbing

@@ -12,6 +12,7 @@ final class FakeGitHub: @unchecked Sendable {
     var trees: [String: [String: String]] = [:]
     var commits: [String: Commit] = [:]
     var requests: [String] = []
+    var lfsObjects: [String: Data] = [:]
     private var counter = 0
 
     func sync<T>(_ body: () throws -> T) rethrows -> T {
@@ -84,6 +85,26 @@ final class FakeGitHub: @unchecked Sendable {
             let body = req.httpBody ?? req.httpBodyStream.map(readAll) ?? Data()
             let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
 
+            if path.hasSuffix(".git/info/lfs/objects/batch") {
+                let operation = json["operation"] as! String
+                let object = (json["objects"] as! [[String: Any]])[0]
+                let oid = object["oid"] as! String
+                var actions: [String: Any] = [:]
+                let href = ["href": "https://fake.test/lfs/\(oid)", "header": ["X-Fake": "1"]] as [String: Any]
+                if operation == "upload", lfsObjects[oid] == nil { actions["upload"] = href }
+                if operation == "download" {
+                    guard lfsObjects[oid] != nil else {
+                        return (200, encode(["objects": [["oid": oid, "error": ["message": "missing"]]]]))
+                    }
+                    actions["download"] = href
+                }
+                return (200, encode(["objects": [["oid": oid, "size": object["size"]!, "actions": actions]]]))
+            }
+            if path.hasPrefix("/lfs/") {
+                let oid = String(path.dropFirst("/lfs/".count))
+                if method == "PUT" { lfsObjects[oid] = body; return (200, Data()) }
+                return lfsObjects[oid].map { (200, $0) } ?? (404, Data())
+            }
             if method == "GET", path == "/user/repos" {
                 let list = repos.keys.sorted().map { name -> [String: Any] in
                     ["name": name, "owner": ["login": owner], "default_branch": "main", "size": 1, "archived": false, "private": true]

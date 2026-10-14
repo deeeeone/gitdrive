@@ -11,9 +11,12 @@ public enum Reserved {
     /// Prefix that marks a repo as a GitDrive folder.
     public static let repoPrefix = "drive-"
 
+    /// `.gitattributes` at the repo root, which GitDrive manages for LFS.
+    public static let attributesFile = ".gitattributes"
+
     public static func isHidden(path: String) -> Bool {
         let parts = path.split(separator: "/")
-        if parts.first.map(String.init) == metaFolder { return true }
+        if parts.first.map(String.init) == metaFolder || path == attributesFile { return true }
         return parts.last.map(String.init) == keepFile
     }
 
@@ -136,14 +139,64 @@ public func joinPath(_ parent: String, _ name: String) -> String {
     parent.isEmpty ? name : "\(parent)/\(name)"
 }
 
+/// A Git LFS object: the SHA-256 of the real file and its size.
+public struct LFSObject: Codable, Sendable, Equatable {
+    public let oid: String
+    public let size: Int64
+
+    public init(oid: String, size: Int64) {
+        self.oid = oid
+        self.size = size
+    }
+
+    /// The small text file git stores in place of the real contents.
+    public var pointer: Data {
+        Data("version https://git-lfs.github.com/spec/v1\noid sha256:\(oid)\nsize \(size)\n".utf8)
+    }
+
+    /// Parses a pointer file. Returns nil for anything else.
+    public static func parse(pointer data: Data) -> LFSObject? {
+        guard data.count < 1024, let text = String(data: data, encoding: .utf8),
+              text.hasPrefix("version https://git-lfs.github.com/spec/v1") else { return nil }
+        var oid: String?
+        var size: Int64?
+        for line in text.split(separator: "\n") {
+            if line.hasPrefix("oid sha256:") { oid = String(line.dropFirst("oid sha256:".count)) }
+            if line.hasPrefix("size ") { size = Int64(line.dropFirst("size ".count)) }
+        }
+        guard let oid, let size else { return nil }
+        return LFSObject(oid: oid, size: size)
+    }
+}
+
 /// Contents of `.gitdrive/meta.json`. Kept sorted and pretty-printed so diffs on GitHub stay readable.
 public struct DriveMeta: Codable, Sendable, Equatable {
     public var version = 1
     /// Repo path to the file's last modification date.
     public var modified: [String: Date] = [:]
+    /// Repo path to the LFS object behind its pointer file.
+    public var lfs: [String: LFSObject] = [:]
 
-    public init(modified: [String: Date] = [:]) {
+    public init(modified: [String: Date] = [:], lfs: [String: LFSObject] = [:]) {
         self.modified = modified
+        self.lfs = lfs
+    }
+
+    enum CodingKeys: String, CodingKey { case version, modified, lfs }
+
+    /// Missing keys are fine, so files written by older versions still load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        modified = try c.decodeIfPresent([String: Date].self, forKey: .modified) ?? [:]
+        lfs = try c.decodeIfPresent([String: LFSObject].self, forKey: .lfs) ?? [:]
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(modified, forKey: .modified)
+        if !lfs.isEmpty { try c.encode(lfs, forKey: .lfs) }
     }
 
     public func encoded() throws -> Data {
@@ -157,6 +210,40 @@ public struct DriveMeta: Codable, Sendable, Equatable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return (try? decoder.decode(DriveMeta.self, from: data)) ?? DriveMeta()
+    }
+}
+
+/// Builds the GitDrive-managed part of `.gitattributes`, keeping any lines the user wrote.
+public enum GitAttributes {
+    static let begin = "# >>> GitDrive LFS (managed, do not edit)"
+    static let end = "# <<< GitDrive LFS"
+
+    public static func update(_ existing: String, lfsPaths: [String]) -> String {
+        var kept: [String] = []
+        var inBlock = false
+        for line in existing.components(separatedBy: "\n") {
+            if line == begin { inBlock = true; continue }
+            if line == end { inBlock = false; continue }
+            if !inBlock { kept.append(line) }
+        }
+        while kept.last?.isEmpty == true { kept.removeLast() }
+        guard !lfsPaths.isEmpty else { return kept.isEmpty ? "" : kept.joined(separator: "\n") + "\n" }
+        let rules = lfsPaths.sorted().map { "/\(escape($0)) filter=lfs diff=lfs merge=lfs -text" }
+        let block = [begin] + rules + [end]
+        return (kept.isEmpty ? block : kept + [""] + block).joined(separator: "\n") + "\n"
+    }
+
+    /// gitattributes patterns can't contain plain spaces, and some characters are glob syntax.
+    static func escape(_ path: String) -> String {
+        var out = ""
+        for ch in path {
+            switch ch {
+            case " ": out += "[[:space:]]"
+            case "*", "?", "[", "]", "\\", "!", "#": out += "\\\(ch)"
+            default: out.append(ch)
+            }
+        }
+        return out
     }
 }
 

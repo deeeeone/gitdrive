@@ -182,6 +182,47 @@ struct SyncEngineTests {
         #expect(try store.children(of: ItemStore.rootID).isEmpty)
     }
 
+    @Test func largeFilesGoToLFS() async throws {
+        let lfsEngine = SyncEngine(
+            client: engine.client, store: store, repoDeletion: { .delete }, lfsThreshold: { 16 }
+        )
+        fake.seed(repo: "drive-media", files: [".gitdrive-keep": "", "small.txt": "tiny"])
+        try await lfsEngine.syncAll()
+        let folder = try id("drive-media", "")
+        let big = String(repeating: "video bytes ", count: 50)
+
+        let file = try await lfsEngine.createFile(parentID: folder, name: "clip one.mov", contents: temp(big))
+        #expect(file.size == Int64(big.utf8.count))
+        let files = fake.files(repo: "drive-media")
+        #expect(files["clip one.mov"]?.hasPrefix("version https://git-lfs.github.com/spec/v1") == true)
+        #expect(files[".gitattributes"]?.contains("/clip[[:space:]]one.mov filter=lfs") == true)
+        #expect(fake.sync { fake.lfsObjects.count } == 1)
+
+        let (url, _) = try await lfsEngine.download(id: file.id)
+        #expect(try String(contentsOf: url, encoding: .utf8) == big)
+
+        // Renaming moves the pointer, the LFS record and the gitattributes rule.
+        _ = try await lfsEngine.modify(id: file.id, newName: "clip.mov", newParentID: nil, contents: nil)
+        let renamed = fake.files(repo: "drive-media")
+        #expect(renamed[".gitattributes"]?.contains("/clip.mov filter=lfs") == true)
+        #expect(renamed[".gitattributes"]?.contains("clip[[:space:]]one") == false)
+        #expect(try store.item(id: file.id)?.size == Int64(big.utf8.count))
+
+        // Small files stay normal blobs, and hidden files never show in Finder.
+        #expect(renamed["small.txt"] == "tiny")
+        #expect(try store.item(repo: "drive-media", path: ".gitattributes") == nil)
+
+        try await lfsEngine.delete(id: file.id)
+        #expect(fake.files(repo: "drive-media")[".gitattributes"] == nil)
+    }
+
+    @Test func gitattributesKeepsUserLines() {
+        let out = GitAttributes.update("*.psd binary\n", lfsPaths: ["a b.zip"])
+        #expect(out.hasPrefix("*.psd binary\n"))
+        #expect(out.contains("/a[[:space:]]b.zip filter=lfs"))
+        #expect(GitAttributes.update(out, lfsPaths: []) == "*.psd binary\n")
+    }
+
     @Test func filesAtRootAreRejected() async throws {
         await #expect(throws: DriveError.filesNotAllowedInRoot) {
             _ = try await engine.createFile(parentID: ItemStore.rootID, name: "x", contents: try temp("x"))

@@ -11,6 +11,25 @@ public enum AppConfig {
     public static var sharedDefaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
     public static let repoDeletionKey = "repoDeletion"
+    public static let lfsEnabledKey = "lfsEnabled"
+    public static let lfsThresholdKey = "lfsThresholdMB"
+
+    /// Off by default. LFS has its own GitHub quota (10 GiB storage and 10 GiB download a month on Free).
+    public static var lfsEnabled: Bool {
+        get { sharedDefaults?.bool(forKey: lfsEnabledKey) ?? false }
+        set { sharedDefaults?.set(newValue, forKey: lfsEnabledKey) }
+    }
+
+    /// Files larger than this many MB go to LFS when it's on. Capped below GitHub's 100 MB file limit.
+    public static var lfsThresholdMB: Int {
+        get { min(sharedDefaults?.object(forKey: lfsThresholdKey) as? Int ?? 50, 99) }
+        set { sharedDefaults?.set(max(1, min(newValue, 99)), forKey: lfsThresholdKey) }
+    }
+
+    /// The threshold in bytes, or nil when LFS is off.
+    public static var lfsThresholdBytes: Int64? {
+        lfsEnabled ? Int64(lfsThresholdMB) * 1024 * 1024 : nil
+    }
 
     /// Defaults to deleting, which matches what deleting a folder in Finder means.
     public static var repoDeletion: RepoDeletion {

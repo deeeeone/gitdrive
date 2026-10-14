@@ -14,7 +14,7 @@ public enum DriveError: Error, Sendable, Equatable, CustomStringConvertible {
         case .filenameCollision: "An item with that name already exists"
         case .filesNotAllowedInRoot: "Put files inside a folder. Each top-level folder is its own GitHub repo."
         case let .unsupportedMove(why): why
-        case let .tooLarge(name): "\(name) is larger than GitHub's 100 MB file limit"
+        case let .tooLarge(name): "\(name) is larger than GitHub's 100 MB file limit. Turn on Git LFS in GitDrive Settings to store it."
         }
     }
 }
@@ -48,12 +48,20 @@ public actor SyncEngine {
     private var metaCache: [String: DriveMeta] = [:]
 
     private let repoDeletion: @Sendable () -> RepoDeletion
+    private let lfsThreshold: @Sendable () -> Int64?
 
-    /// `repoDeletion` is read at delete time, so changing the setting applies right away.
-    public init(client: GitHubClient, store: ItemStore, repoDeletion: @escaping @Sendable () -> RepoDeletion = { .archive }) {
+    /// Settings are closures read at use time, so changes apply right away.
+    /// `lfsThreshold` is the size in bytes above which files go to Git LFS, or nil to never use LFS.
+    public init(
+        client: GitHubClient,
+        store: ItemStore,
+        repoDeletion: @escaping @Sendable () -> RepoDeletion = { .archive },
+        lfsThreshold: @escaping @Sendable () -> Int64? = { nil }
+    ) {
         self.client = client
         self.store = store
         self.repoDeletion = repoDeletion
+        self.lfsThreshold = lfsThreshold
     }
 
     // MARK: Remote to local
@@ -162,7 +170,9 @@ public actor SyncEngine {
             case .tree:
                 if !Reserved.isHidden(path: e.path) { remote[e.path] = Remote(isDirectory: true, sha: nil, size: 0) }
             case .blob:
-                if !Reserved.isHidden(path: e.path) { remote[e.path] = Remote(isDirectory: false, sha: e.sha, size: e.size ?? 0) }
+                if !Reserved.isHidden(path: e.path) {
+                    remote[e.path] = Remote(isDirectory: false, sha: e.sha, size: meta.lfs[e.path]?.size ?? e.size ?? 0)
+                }
             }
         }
         let now = fallbackDate
@@ -231,7 +241,7 @@ public actor SyncEngine {
         guard let item = try store.item(id: id), let sha = item.sha, let rec = try store.repo(named: item.repo) else {
             throw DriveError.noSuchItem
         }
-        let url = try await client.downloadBlob(owner: rec.owner, repo: item.repo, sha: sha)
+        let url = try await client.downloadContents(owner: rec.owner, repo: item.repo, sha: sha)
         return (url, item)
     }
 
@@ -267,11 +277,11 @@ public actor SyncEngine {
             // The system re-creates items it already knows after a reimport. Treat that as an edit.
             return try await modify(id: existing.id, newName: nil, newParentID: nil, contents: contents, modified: modified)
         }
-        let sha = try await upload(contents, to: repo, name: name)
+        let (sha, lfs) = try await upload(contents, to: repo, name: name)
         let id = UUID().uuidString
         try await commit(
             repo: repo.name, edits: [.put(path: path, sha: sha)], claims: [path: id],
-            dates: [path: modified ?? Date()], message: "Add \(path)"
+            dates: [path: modified ?? Date()], lfs: lfs, message: "Add \(path)"
         )
         guard let item = try store.item(id: id) else { throw DriveError.noSuchItem }
         return item
@@ -299,6 +309,7 @@ public actor SyncEngine {
         var edits: [Edit] = []
         var claims: [String: String] = [:]
         var dates: [String: Date] = [:]
+        var lfs: [String: LFSObject] = [:]
         let moved = targetPath != item.path
         if moved, try store.item(repo: repo.name, path: targetPath) != nil { throw DriveError.filenameCollision }
 
@@ -312,7 +323,7 @@ public actor SyncEngine {
             }
         } else {
             var sha = item.sha ?? ""
-            if let contents { sha = try await upload(contents, to: repo, name: item.filename) }
+            if let contents { (sha, lfs) = try await upload(contents, to: repo, name: item.filename) }
             if moved { edits.append(.delete(path: item.path)) }
             edits.append(.put(path: targetPath, sha: sha, baseSHA: contents == nil ? nil : item.sha))
             claims[targetPath] = item.id
@@ -321,7 +332,7 @@ public actor SyncEngine {
         }
 
         let verb = moved ? "Move \(item.path) to \(targetPath)" : "Update \(item.path)"
-        try await commit(repo: repo.name, edits: edits, claims: claims, dates: dates, message: verb)
+        try await commit(repo: repo.name, edits: edits, claims: claims, dates: dates, lfs: lfs, message: verb)
         guard let updated = try store.item(id: id) else { throw DriveError.noSuchItem }
         return updated
     }
@@ -366,13 +377,13 @@ public actor SyncEngine {
         if let contents {
             source = contents
         } else {
-            source = try await client.downloadBlob(owner: from.owner, repo: from.name, sha: item.sha ?? "")
+            source = try await client.downloadContents(owner: from.owner, repo: from.name, sha: item.sha ?? "")
         }
         if try store.item(repo: to.name, path: path) != nil { throw DriveError.filenameCollision }
-        let sha = try await upload(source, to: to, name: item.filename)
+        let (sha, lfs) = try await upload(source, to: to, name: item.filename)
         try await commit(
             repo: to.name, edits: [.put(path: path, sha: sha)], claims: [path: item.id],
-            dates: [path: modified], message: "Add \(path)"
+            dates: [path: modified], lfs: lfs, message: "Add \(path)"
         )
         try await commit(repo: from.name, edits: [.delete(path: item.path)], claims: [:], message: "Move \(item.path) to \(to.name)")
         guard let updated = try store.item(id: item.id) else { throw DriveError.noSuchItem }
@@ -393,22 +404,24 @@ public actor SyncEngine {
         // Blobs belong to one repo, so each file is downloaded and uploaded again. Four at a time.
         var edits: [Edit] = []
         var dates: [String: Date] = [:]
+        var lfs: [String: LFSObject] = [:]
         for start in stride(from: 0, to: blobs.count, by: 4) {
             let chunk = blobs[start..<min(start + 4, blobs.count)]
-            let copied = try await withThrowingTaskGroup(of: (TreeEntry, String).self) { group in
+            let copied = try await withThrowingTaskGroup(of: (TreeEntry, String, [String: LFSObject]).self) { group in
                 for blob in chunk {
                     group.addTask {
-                        let file = try await self.client.downloadBlob(owner: from.owner, repo: from.name, sha: blob.sha)
+                        let file = try await self.client.downloadContents(owner: from.owner, repo: from.name, sha: blob.sha)
                         defer { try? FileManager.default.removeItem(at: file) }
-                        let sha = try await self.client.createBlob(owner: to.owner, repo: to.name, contentsOf: file)
-                        return (blob, sha)
+                        let (sha, lfs) = try await self.upload(file, to: to, name: blob.path)
+                        return (blob, sha, lfs)
                     }
                 }
-                var results: [(TreeEntry, String)] = []
+                var results: [(TreeEntry, String, [String: LFSObject])] = []
                 for try await result in group { results.append(result) }
                 return results
             }
-            for (blob, sha) in copied {
+            for (blob, sha, objects) in copied {
+                lfs.merge(objects) { a, _ in a }
                 let newPath = targetPath + blob.path.dropFirst(item.path.count)
                 edits.append(.put(path: newPath, sha: sha, mode: blob.mode))
                 if let date = meta.modified[blob.path] { dates[newPath] = date }
@@ -422,7 +435,7 @@ public actor SyncEngine {
         for child in try store.descendants(of: item) {
             claims[targetPath + child.path.dropFirst(item.path.count)] = child.id
         }
-        try await commit(repo: to.name, edits: edits, claims: claims, dates: dates, message: "Add \(targetPath) from \(from.name)")
+        try await commit(repo: to.name, edits: edits, claims: claims, dates: dates, lfs: lfs, message: "Add \(targetPath) from \(from.name)")
         try await commit(repo: from.name, edits: [.deleteFolder(path: item.path)], claims: [:], message: "Move \(item.path) to \(to.name)")
         guard let moved = try store.item(id: item.id) else { throw DriveError.noSuchItem }
         return moved
@@ -434,6 +447,8 @@ public actor SyncEngine {
         let edits: [Edit]
         let claims: [String: String]
         let dates: [String: Date]
+        /// Pointer blob SHA to the LFS object it points at, for files uploaded in this commit.
+        let lfs: [String: LFSObject]
         let message: String
         let continuation: CheckedContinuation<Void, Error>
     }
@@ -442,10 +457,13 @@ public actor SyncEngine {
     private var draining: Set<String> = []
 
     /// Queues edits for a repo. Edits that arrive while a commit is in flight are batched into the next one.
-    func commit(repo: String, edits: [Edit], claims: [String: String], dates: [String: Date] = [:], message: String) async throws {
+    func commit(
+        repo: String, edits: [Edit], claims: [String: String], dates: [String: Date] = [:],
+        lfs: [String: LFSObject] = [:], message: String
+    ) async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             pending[repo, default: []].append(
-                PendingCommit(edits: edits, claims: claims, dates: dates, message: message, continuation: c)
+                PendingCommit(edits: edits, claims: claims, dates: dates, lfs: lfs, message: message, continuation: c)
             )
             if !draining.contains(repo) {
                 draining.insert(repo)
@@ -479,9 +497,11 @@ public actor SyncEngine {
 
             var claims: [String: String] = [:]
             var dates: [String: Date] = [:]
+            var newLFS: [String: LFSObject] = [:]
             for p in batch {
                 claims.merge(p.claims) { _, new in new }
                 dates.merge(p.dates) { _, new in new }
+                newLFS.merge(p.lfs) { _, new in new }
             }
             let oldMeta = await loadMeta(rec, entries: remoteEntries)
             var changes = try expand(
@@ -489,12 +509,33 @@ public actor SyncEngine {
             )
             if changes.isEmpty { return }
 
+            // LFS objects are tracked by pointer blob SHA, so they follow renames, moves and conflict copies.
+            var lfsBySHA = newLFS
+            let remoteSHA = Dictionary(remoteEntries.map { ($0.path, $0.sha) }, uniquingKeysWith: { a, _ in a })
+            for (path, object) in oldMeta.lfs { if let sha = remoteSHA[path] { lfsBySHA[sha] = lfsBySHA[sha] ?? object } }
+
             var meta = oldMeta
             for change in changes {
-                if change.sha == nil {
+                guard let sha = change.sha else {
                     meta.modified[change.path] = nil
-                } else if let date = dates[change.path] {
-                    meta.modified[change.path] = date.wholeSeconds
+                    meta.lfs[change.path] = nil
+                    continue
+                }
+                if let date = dates[change.path] { meta.modified[change.path] = date.wholeSeconds }
+                meta.lfs[change.path] = lfsBySHA[sha]
+            }
+            if Set(meta.lfs.keys) != Set(oldMeta.lfs.keys) {
+                var existing = ""
+                if let entry = remoteEntries.first(where: { $0.path == Reserved.attributesFile && $0.type == .blob }),
+                   let data = try? await client.blobData(owner: rec.owner, repo: name, sha: entry.sha) {
+                    existing = String(decoding: data, as: UTF8.self)
+                }
+                let updated = GitAttributes.update(existing, lfsPaths: Array(meta.lfs.keys))
+                if updated.isEmpty {
+                    if remoteSHA[Reserved.attributesFile] != nil { changes.append(TreeChange(path: Reserved.attributesFile, sha: nil)) }
+                } else {
+                    let blob = try await client.createBlob(owner: rec.owner, repo: name, data: Data(updated.utf8))
+                    changes.append(TreeChange(path: Reserved.attributesFile, sha: blob))
                 }
             }
             if meta != oldMeta {
@@ -564,10 +605,17 @@ public actor SyncEngine {
         return (repo, folder.path)
     }
 
-    private func upload(_ file: URL, to repo: RepoRecord, name: String) async throws -> String {
+    /// Uploads file contents and returns the blob to commit. Files over the LFS threshold go to LFS
+    /// storage and the blob is their pointer; the returned map links that pointer to its object.
+    private func upload(_ file: URL, to repo: RepoRecord, name: String) async throws -> (String, [String: LFSObject]) {
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+        if let threshold = lfsThreshold(), size > threshold {
+            let object = try await client.lfsUpload(owner: repo.owner, repo: repo.name, file: file)
+            let sha = try await client.createBlob(owner: repo.owner, repo: repo.name, data: object.pointer)
+            return (sha, [sha: object])
+        }
         if size > maxFileSize { throw DriveError.tooLarge(name) }
-        return try await client.createBlob(owner: repo.owner, repo: repo.name, contentsOf: file)
+        return (try await client.createBlob(owner: repo.owner, repo: repo.name, contentsOf: file), [:])
     }
 
     private func emptyBlob(in repo: RepoRecord) async throws -> String {
