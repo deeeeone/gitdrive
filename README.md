@@ -38,6 +38,7 @@
 - **Frees up space.** Right-click and choose Remove Download, or use Free Up Space in the menu bar. macOS can also remove downloads on its own when the disk is low.
 - **Private by default.** Every top-level folder is its own private GitHub repo named `drive-<folder>`.
 - **Real git history.** Each save is a commit, so every old version stays recoverable on GitHub.
+- **Large files with Git LFS.** Optional: files over a size you choose go to Git LFS, up to 2 GB each.
 - **Keeps file dates.** Modification dates are saved in the repo, so every Mac shows the same dates.
 - **Works with other edits.** Changes made on github.com or from a clone show up in Finder within a minute. Edits on both sides keep both copies.
 - **Menu bar app.** Sync status, folder sizes, pause, launch at login.
@@ -102,7 +103,8 @@ GitHub is built for source code, not as a general file host, so keep these in mi
 
 | Limit | What happens |
 |---|---|
-| 100 MB per file | Larger files are refused with a clear error. Git LFS support is on the roadmap. |
+| 100 MB per file | Turn on **Settings → General → Large files** to store bigger files with Git LFS, up to 2 GB each. |
+| Git LFS quota | GitHub Free includes 10 GiB of LFS storage and 10 GiB of downloads a month. Opening a file counts as a download. |
 | Repo size | GitHub recommends repos under 1 GB and strongly recommends under 5 GB. The menu bar warns past 1 GB. |
 | History | Deleted files still count toward repo size. **Settings → Folders → Compact History** keeps only the current files. |
 | API rate limit | 5,000 requests per hour. GitDrive uses conditional requests and backs off when it gets close. |
@@ -123,7 +125,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 ## Roadmap
 
-- [ ] Git LFS for files over 100 MB
+- [x] Git LFS for files over 100 MB
 - [x] Modification dates stored in the repo
 - [x] Moving folders between top-level folders
 - [ ] Shared folders (repos you collaborate on)

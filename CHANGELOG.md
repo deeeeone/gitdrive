@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format is based on 
 
 - Folders can be moved between top-level folders. Files are copied to the new repo before the old copy is deleted.
 
+- Optional Git LFS for large files, with a size threshold in Settings. Off by default.
+
 ### Changed
 
 - Deleting a top-level folder now deletes its GitHub repo. Settings can switch this back to archiving. Sign-in asks for the `delete_repo` scope.

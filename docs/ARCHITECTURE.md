@@ -34,6 +34,16 @@ Git doesn't store file dates, so GitDrive keeps them in `.gitdrive/meta.json`:
 
 The file is updated in the same commit as the change it describes, and dates follow files through renames, folder moves and conflict copies. Files added outside GitDrive (on github.com or with `git push`) aren't listed, so they show the date of the newest commit at the time GitDrive saw them change. That is exact for single edits but can be later than the real change if several commits arrived at once. The meta file is read once per new tree and cached by blob SHA.
 
+## Large files (Git LFS)
+
+When **Large files** is on in Settings, files bigger than the chosen threshold (50 MB by default) are uploaded through GitHub's LFS batch API, and the commit stores the standard LFS pointer file instead of the contents. GitDrive also:
+
+- records each LFS object (SHA-256 and size) in `.gitdrive/meta.json`, so Finder shows the real size rather than the pointer's
+- keeps a managed block in `.gitattributes`, so normal `git clone` with git-lfs installed gets the real files. Lines outside the block are left alone
+- follows pointers when downloading, including pointers pushed by other git clients
+
+LFS objects are tracked by the pointer blob's SHA, so they follow renames, moves and conflict copies without uploading again.
+
 ## Identity and versions
 
 Git has no stable file IDs, so the index gives every item a random ID and keeps it across renames and moves. A rename or move is sent to the sync engine with a *claim*: "path X now belongs to item Y". When the new tree comes back, claimed paths keep their old IDs and everything else is matched by path.

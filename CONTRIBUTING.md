@@ -46,6 +46,14 @@ GITDRIVE_SNAPSHOT=dark build/Build/Products/Debug/GitDrive.app/Contents/MacOS/Gi
 
 Then capture the window with `screencapture -l <window id>`. Use `light` for the light version.
 
+## Changing settings from the command line
+
+Debug builds accept `GITDRIVE_DEFAULTS` to write shared settings, which are otherwise only reachable from inside the sandbox:
+
+```bash
+GITDRIVE_DEFAULTS="lfsEnabled=true,lfsThresholdMB=1" build/Build/Products/Debug/GitDrive.app/Contents/MacOS/GitDrive
+```
+
 ## Code style
 
 - Swift 6 with strict concurrency. No `@unchecked Sendable` unless a system type forces it, with a comment saying why.
